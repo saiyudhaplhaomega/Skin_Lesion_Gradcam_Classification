@@ -24,8 +24,8 @@ Medical imaging AI platform that classifies dermoscopy images as benign or malig
 
 | Repository | Purpose | Deploy |
 |------------|---------|--------|
-| [skin-lesion-backend](https://github.com/YOUR_USERNAME/Skin_Lesion_Gradcam_Classification) | FastAPI inference API + PyTorch ML | AWS ECS Fargate |
-| [skin-lesion-frontend](https://github.com/YOUR_USERNAME/Skin_Lesion_Gradcam_Classification) | Next.js web app | Vercel |
+| [skin-lesion-backend](https://github.com/saiyudhaplhaomega/Skin_Lesion_Classification_backend) | FastAPI inference API + PyTorch ML | AWS ECS Fargate |
+| [skin-lesion-frontend](https://github.com/saiyudhaplhaomega/Skin_Lesion_Classification_frontend) | Next.js web app | Vercel |
 
 ## Infrastructure
 
