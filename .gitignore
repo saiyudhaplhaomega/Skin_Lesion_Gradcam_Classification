@@ -42,7 +42,17 @@ Skin_Lesion_Classification_frontend/
 *.h5
 models/
 
+# MLflow
+mlruns/
+
 # Data
 data/
 *.csv
 *.parquet
+
+# Notebooks outputs
+*.ipynb_checkpoints/
+
+# Local sensitive files
+*.local
+.env.production
