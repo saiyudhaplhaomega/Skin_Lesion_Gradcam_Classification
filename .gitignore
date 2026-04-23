@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+ENV/
+env/
+*.egg-info/
+dist/
+build/
+
+# Node
+node_modules/
+.next/
+out/
+*.log
+npm-debug.log*
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+*.tfvars
+
+# Frontend/Backend - these are separate git repos
+Skin_Lesion_Classification_backend/
+Skin_Lesion_Classification_frontend/
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Model weights
+*.pth
+*.pt
+*.onnx
+*.h5
+models/
+
+# Data
+data/
+*.csv
+*.parquet
