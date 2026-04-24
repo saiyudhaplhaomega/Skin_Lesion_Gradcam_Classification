@@ -78,9 +78,19 @@ See `GDPR_COMPLIANCE.md` for data handling requirements.
 
 ## Documentation
 
-- `ARCHITECTURE.md` - System design and data flow
-- `BUILD_PHASE_1_INFRASTRUCTURE.md` - AWS infrastructure setup
-- `BUILD_PHASE_2_BACKEND.md` - FastAPI implementation guide
-- `BUILD_PHASE_3_FRONTEND.md` - Next.js implementation guide
-- `BUILD_PHASE_5_CICD.md` - CI/CD pipeline and model promotion workflow
-- `GDPR_COMPLIANCE.md` - Consent management and data retention
+**Start here when building:** [`docs/HOW_TO_BUILD.md`](docs/HOW_TO_BUILD.md) - navigation map for the entire build, phase by phase.
+
+| Doc | Purpose |
+|-----|---------|
+| [`docs/HOW_TO_BUILD.md`](docs/HOW_TO_BUILD.md) | Build navigation guide - where to go at each stage |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | System design, data flow, and 28 critical engineering questions |
+| [`docs/BUILD_PHASE_1_INFRASTRUCTURE.md`](docs/BUILD_PHASE_1_INFRASTRUCTURE.md) | Terraform infrastructure setup |
+| [`docs/BUILD_PHASE_2_BACKEND.md`](docs/BUILD_PHASE_2_BACKEND.md) | FastAPI implementation + AI/Data engineer patterns |
+| [`docs/BUILD_PHASE_3_FRONTEND.md`](docs/BUILD_PHASE_3_FRONTEND.md) | Next.js per-role UI implementation |
+| [`docs/BUILD_PHASE_4_MOBILE.md`](docs/BUILD_PHASE_4_MOBILE.md) | React Native / Expo mobile app |
+| [`docs/BUILD_PHASE_5_CICD.md`](docs/BUILD_PHASE_5_CICD.md) | CI/CD, MLflow, and deployment |
+| [`docs/DEVELOPMENT_CHECKLIST.md`](docs/DEVELOPMENT_CHECKLIST.md) | Live task tracker - check boxes as you build |
+| [`docs/SECURITY_CHECKLIST.md`](docs/SECURITY_CHECKLIST.md) | Security sign-off before launch |
+| [`docs/GDPR_COMPLIANCE.md`](docs/GDPR_COMPLIANCE.md) | Consent management and data retention |
+| [`docs/ROLLBACK_PROCEDURES.md`](docs/ROLLBACK_PROCEDURES.md) | How to undo deployments |
+| [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) | Error lookup and fixes |
