@@ -1631,6 +1631,875 @@ const styles = StyleSheet.create({
 });
 ```
 
+
+### Doctor Patient List Screen
+
+Create `app/(app)/patients.tsx`:
+
+```typescript
+import { useState, useEffect } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  TouchableOpacity,
+  RefreshControl,
+  Image,
+  Alert,
+} from "react-native";
+import { useAuth } from "../../src/context/AuthContext";
+import { api } from "../../src/services/api";
+import { format } from "date-fns";
+
+interface PendingCase {
+  case_id: string;
+  prediction_id: string;
+  image_url: string;
+  ai_diagnosis: string;
+  ai_confidence: number;
+  created_at: string;
+}
+
+export default function PatientsScreen() {
+  const { user } = useAuth();
+  const [cases, setCases] = useState<PendingCase[]>([]);
+  const [selectedCase, setSelectedCase] = useState<PendingCase | null>(null);
+  const [doctorDiagnosis, setDoctorDiagnosis] = useState<"benign" | "malignant">("benign");
+  const [notes, setNotes] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const fetchCases = async () => {
+    try {
+      const data = await api.getPendingPredictions();
+      setCases(data);
+    } catch (error) {
+      console.error("Failed to fetch cases:", error);
+    } finally {
+      setIsLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchCases();
+  }, []);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchCases();
+  };
+
+  const handleSubmitOpinion = async () => {
+    if (!selectedCase) return;
+
+    setIsSubmitting(true);
+    try {
+      await api.submitExpertOpinion(selectedCase.prediction_id, doctorDiagnosis, notes || undefined);
+      Alert.alert("Success", "Expert opinion submitted. Case moved to admin review.");
+      setSelectedCase(null);
+      setNotes("");
+      fetchCases();
+    } catch (error: any) {
+      Alert.alert("Error", error.message || "Failed to submit opinion");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const renderCase = ({ item }: { item: PendingCase }) => (
+    <TouchableOpacity
+      style={[styles.caseCard, selectedCase?.case_id === item.case_id && styles.caseCardSelected]}
+      onPress={() => setSelectedCase(item)}
+    >
+      <Image source={{ uri: item.image_url }} style={styles.caseImage} />
+      <View style={styles.caseInfo}>
+        <Text style={styles.caseDiagnosis}>
+          AI: {item.ai_diagnosis} ({item.ai_confidence.toFixed(0)}%)
+        </Text>
+        <Text style={styles.caseDate}>
+          {format(new Date(item.created_at), "MMM d, yyyy")}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  );
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.title}>Patient Cases</Text>
+        <Text style={styles.subtitle}>{cases.length} pending review</Text>
+      </View>
+
+      <View style={styles.content}>
+        {/* Case List */}
+        <FlatList
+          data={cases}
+          keyExtractor={(item) => item.case_id}
+          renderItem={renderCase}
+          contentContainerStyle={styles.list}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
+          ListEmptyComponent={
+            !isLoading ? (
+              <View style={styles.empty}>
+                <Text style={styles.emptyIcon}>📋</Text>
+                <Text style={styles.emptyText}>No cases pending review</Text>
+              </View>
+            ) : null
+          }
+        />
+
+        {/* Case Detail Modal */}
+        {selectedCase && (
+          <View style={styles.detailCard}>
+            <Text style={styles.detailTitle}>Review Case</Text>
+
+            <Image source={{ uri: selectedCase.image_url }} style={styles.detailImage} />
+
+            <View style={styles.aiResult}>
+              <Text style={styles.aiLabel}>AI Prediction:</Text>
+              <Text style={styles.aiDiagnosis}>
+                {selectedCase.ai_diagnosis} ({selectedCase.ai_confidence.toFixed(0)}%)
+              </Text>
+            </View>
+
+            <Text style={styles.inputLabel}>Your Diagnosis:</Text>
+            <View style={styles.diagnosisButtons}>
+              <TouchableOpacity
+                style={[
+                  styles.diagnosisButton,
+                  doctorDiagnosis === "benign" && styles.diagnosisButtonActive,
+                ]}
+                onPress={() => setDoctorDiagnosis("benign")}
+              >
+                <Text style={[
+                  styles.diagnosisButtonText,
+                  doctorDiagnosis === "benign" && styles.diagnosisButtonTextActive,
+                ]}>
+                  Benign
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.diagnosisButton,
+                  doctorDiagnosis === "malignant" && styles.diagnosisButtonActiveMalignant,
+                ]}
+                onPress={() => setDoctorDiagnosis("malignant")}
+              >
+                <Text style={[
+                  styles.diagnosisButtonText,
+                  doctorDiagnosis === "malignant" && styles.diagnosisButtonTextActive,
+                ]}>
+                  Malignant
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              style={styles.submitButton}
+              onPress={handleSubmitOpinion}
+              disabled={isSubmitting}
+            >
+              <Text style={styles.submitButtonText}>
+                {isSubmitting ? "Submitting..." : "Submit Opinion"}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={() => setSelectedCase(null)}
+            >
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: "#f5f5f5" },
+  header: { padding: 20, backgroundColor: "#2563eb" },
+  title: { fontSize: 20, fontWeight: "bold", color: "#fff" },
+  subtitle: { fontSize: 14, color: "#bfdbfe", marginTop: 4 },
+  content: { flex: 1 },
+  list: { padding: 16 },
+  caseCard: {
+    flexDirection: "row",
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 2,
+    borderColor: "#e5e5e5",
+  },
+  caseCardSelected: { borderColor: "#2563eb", backgroundColor: "#eff6ff" },
+  caseImage: { width: 60, height: 60, borderRadius: 8 },
+  caseInfo: { marginLeft: 12, justifyContent: "center" },
+  caseDiagnosis: { fontSize: 16, fontWeight: "600", color: "#333" },
+  caseDate: { fontSize: 12, color: "#999", marginTop: 4 },
+  empty: { alignItems: "center", padding: 40 },
+  emptyIcon: { fontSize: 48, marginBottom: 12 },
+  emptyText: { fontSize: 16, color: "#999" },
+  detailCard: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    maxHeight: "80%",
+  },
+  detailTitle: { fontSize: 20, fontWeight: "bold", color: "#333", marginBottom: 16 },
+  detailImage: { width: "100%", height: 200, borderRadius: 12, resizeMode: "cover" },
+  aiResult: { flexDirection: "row", justifyContent: "space-between", marginTop: 16 },
+  aiLabel: { fontSize: 14, color: "#666" },
+  aiDiagnosis: { fontSize: 14, fontWeight: "600" },
+  inputLabel: { fontSize: 14, color: "#666", marginTop: 16, marginBottom: 8 },
+  diagnosisButtons: { flexDirection: "row", gap: 12 },
+  diagnosisButton: {
+    flex: 1,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: "#e5e5e5",
+    alignItems: "center",
+  },
+  diagnosisButtonActive: { borderColor: "#10b981", backgroundColor: "#ecfdf5" },
+  diagnosisButtonActiveMalignant: { borderColor: "#ef4444", backgroundColor: "#fef2f2" },
+  diagnosisButtonText: { fontSize: 16, fontWeight: "600", color: "#666" },
+  diagnosisButtonTextActive: { color: "#333" },
+  submitButton: { backgroundColor: "#2563eb", padding: 16, borderRadius: 12, alignItems: "center", marginTop: 20 },
+  submitButtonText: { color: "#fff", fontSize: 16, fontWeight: "600" },
+  cancelButton: { padding: 16, alignItems: "center", marginTop: 8 },
+  cancelButtonText: { color: "#666", fontSize: 16 },
+});
+```
+
+
+### Admin Screen
+
+Create `app/(app)/admin.tsx`:
+
+```typescript
+import { useState, useEffect } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  Alert,
+  ActivityIndicator,
+} from "react-native";
+import { useAuth } from "../../src/context/AuthContext";
+import { api } from "../../src/services/api";
+
+interface AdminStats {
+  total_users: number;
+  total_patients: number;
+  total_doctors: number;
+  pending_doctors: number;
+  pool_size: number;
+  ready_to_retrain: boolean;
+}
+
+export default function AdminScreen() {
+  const { user } = useAuth();
+  const [stats, setStats] = useState<AdminStats | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRetraining, setIsRetraining] = useState(false);
+
+  const fetchStats = async () => {
+    try {
+      const data = await api.getAdminStats();
+      setStats(data);
+    } catch (error) {
+      console.error("Failed to fetch stats:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchStats();
+  }, []);
+
+  const handleRetrain = async () => {
+    setIsRetraining(true);
+    try {
+      await api.triggerRetraining();
+      Alert.alert("Success", "Retraining triggered. Check MLflow for progress.");
+    } catch (error: any) {
+      Alert.alert("Error", error.message || "Failed to trigger retraining");
+    } finally {
+      setIsRetraining(false);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#2563eb" />
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.title}>Admin Dashboard</Text>
+        <Text style={styles.subtitle}>Manage platform and training pool</Text>
+      </View>
+
+      {/* Stats Grid */}
+      <View style={styles.statsGrid}>
+        <View style={styles.statCard}>
+          <Text style={styles.statValue}>{stats?.total_users || 0}</Text>
+          <Text style={styles.statLabel}>Total Users</Text>
+        </View>
+        <View style={styles.statCard}>
+          <Text style={styles.statValue}>{stats?.total_patients || 0}</Text>
+          <Text style={styles.statLabel}>Patients</Text>
+        </View>
+        <View style={styles.statCard}>
+          <Text style={styles.statValue}>{stats?.total_doctors || 0}</Text>
+          <Text style={styles.statLabel}>Doctors</Text>
+        </View>
+        <View style={styles.statCard}>
+          <Text style={[styles.statValue, { color: "#f59e0b" }]}>
+            {stats?.pending_doctors || 0}
+          </Text>
+          <Text style={styles.statLabel}>Pending Doctors</Text>
+        </View>
+      </View>
+
+      {/* Training Pool Section */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Training Pool</Text>
+
+        <View style={styles.poolCard}>
+          <View style={styles.poolHeader}>
+            <Text style={styles.poolTitle}>Approved Cases</Text>
+            <Text style={styles.poolValue}>{stats?.pool_size || 0}</Text>
+          </View>
+
+          <View style={styles.progressContainer}>
+            <View style={styles.progressBar}>
+              <View
+                style={[
+                  styles.progressFill,
+                  { width: `${Math.min(((stats?.pool_size || 0) / 5000) * 100, 100)}%` },
+                ]}
+              />
+            </View>
+            <Text style={styles.progressText}>
+              {stats?.pool_size || 0} / 5000 (min for retraining)
+            </Text>
+          </View>
+
+          {stats?.ready_to_retrain ? (
+            <View style={styles.readyCard}>
+              <Text style={styles.readyText}>Ready for retraining!</Text>
+              <TouchableOpacity
+                style={styles.retrainButton}
+                onPress={handleRetrain}
+                disabled={isRetraining}
+              >
+                <Text style={styles.retrainButtonText}>
+                  {isRetraining ? "Triggering..." : "Trigger Batch Retraining"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.notReadyCard}>
+              <Text style={styles.notReadyText}>
+                Need {5000 - (stats?.pool_size || 0)} more approved cases
+              </Text>
+            </View>
+          )}
+        </View>
+      </View>
+
+      {/* Quick Actions */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Quick Actions</Text>
+
+        <View style={styles.actionsGrid}>
+          <TouchableOpacity style={styles.actionCard}>
+            <Text style={styles.actionIcon}>👨‍⚕️</Text>
+            <Text style={styles.actionLabel}>Approve Doctors</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionCard}>
+            <Text style={styles.actionIcon}>📊</Text>
+            <Text style={styles.actionLabel}>View Analytics</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionCard}>
+            <Text style={styles.actionIcon}>⚙️</Text>
+            <Text style={styles.actionLabel}>Settings</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionCard}>
+            <Text style={styles.actionIcon}>📧</Text>
+            <Text style={styles.actionLabel}>Send Notification</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: "#f5f5f5" },
+  loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
+  header: { padding: 20, backgroundColor: "#2563eb" },
+  title: { fontSize: 24, fontWeight: "bold", color: "#fff" },
+  subtitle: { fontSize: 14, color: "#bfdbfe", marginTop: 4 },
+  statsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    padding: 12,
+    gap: 12,
+  },
+  statCard: {
+    width: "47%",
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 16,
+    alignItems: "center",
+  },
+  statValue: { fontSize: 28, fontWeight: "bold", color: "#2563eb" },
+  statLabel: { fontSize: 12, color: "#666", marginTop: 4 },
+  section: { padding: 16 },
+  sectionTitle: { fontSize: 18, fontWeight: "600", color: "#333", marginBottom: 12 },
+  poolCard: { backgroundColor: "#fff", borderRadius: 12, padding: 16 },
+  poolHeader: { flexDirection: "row", justifyContent: "space-between", marginBottom: 12 },
+  poolTitle: { fontSize: 14, color: "#666" },
+  poolValue: { fontSize: 24, fontWeight: "bold", color: "#10b981" },
+  progressContainer: { marginBottom: 16 },
+  progressBar: { height: 8, backgroundColor: "#e5e5e5", borderRadius: 4 },
+  progressFill: { height: "100%", backgroundColor: "#10b981", borderRadius: 4 },
+  progressText: { fontSize: 12, color: "#999", marginTop: 4, textAlign: "center" },
+  readyCard: { alignItems: "center" },
+  readyText: { fontSize: 14, color: "#10b981", fontWeight: "600", marginBottom: 12 },
+  retrainButton: { backgroundColor: "#10b981", paddingHorizontal: 24, paddingVertical: 12, borderRadius: 8 },
+  retrainButtonText: { color: "#fff", fontWeight: "600" },
+  notReadyCard: { alignItems: "center" },
+  notReadyText: { fontSize: 14, color: "#999" },
+  actionsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
+  actionCard: {
+    width: "47%",
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 16,
+    alignItems: "center",
+  },
+  actionIcon: { fontSize: 32, marginBottom: 8 },
+  actionLabel: { fontSize: 14, color: "#666", textAlign: "center" },
+});
+```
+
+
+### Profile Screen
+
+Create `app/(app)/profile.tsx`:
+
+```typescript
+import { useState } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Alert,
+  ScrollView,
+  Switch,
+} from "react-native";
+import { useAuth } from "../../src/context/AuthContext";
+
+export default function ProfileScreen() {
+  const { user, logout } = useAuth();
+  const [notifications, setNotifications] = useState(true);
+  const [darkMode, setDarkMode] = useState(false);
+
+  const handleLogout = () => {
+    Alert.alert(
+      "Logout",
+      "Are you sure you want to logout?",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Logout", style: "destructive", onPress: logout },
+      ]
+    );
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      "Delete Account",
+      "This action cannot be undone. All your data will be permanently deleted.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            Alert.alert("Contact Support", "Please contact support@skinlesion.com to delete your account.");
+          },
+        },
+      ]
+    );
+  };
+
+  return (
+    <ScrollView style={styles.container}>
+      <View style={styles.header}>
+        <View style={styles.avatar}>
+          <Text style={styles.avatarText}>
+            {user?.full_name?.charAt(0) || user?.email?.charAt(0) || "?"}
+          </Text>
+        </View>
+        <Text style={styles.name}>{user?.full_name || "User"}</Text>
+        <Text style={styles.email}>{user?.email}</Text>
+        <View style={styles.roleBadge}>
+          <Text style={styles.roleText}>{user?.role?.toUpperCase()}</Text>
+        </View>
+      </View>
+
+      {/* Account Section */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Account</Text>
+
+        <TouchableOpacity style={styles.menuItem}>
+          <Text style={styles.menuLabel}>Edit Profile</Text>
+          <Text style={styles.menuArrow}>→</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.menuItem}>
+          <Text style={styles.menuLabel}>Change Password</Text>
+          <Text style={styles.menuArrow}>→</Text>
+        </TouchableOpacity>
+
+        {user?.role === "doctor" && (
+          <TouchableOpacity style={styles.menuItem}>
+            <Text style={styles.menuLabel}>Medical License</Text>
+            <Text style={styles.menuValue}>
+              {user.medical_license || "Not provided"}
+            </Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* Preferences Section */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Preferences</Text>
+
+        <View style={styles.menuItem}>
+          <Text style={styles.menuLabel}>Push Notifications</Text>
+          <Switch
+            value={notifications}
+            onValueChange={setNotifications}
+            trackColor={{ false: "#e5e5e5", true: "#93c5fd" }}
+            thumbColor={notifications ? "#2563eb" : "#fff"}
+          />
+        </View>
+
+        <View style={styles.menuItem}>
+          <Text style={styles.menuLabel}>Dark Mode</Text>
+          <Switch
+            value={darkMode}
+            onValueChange={setDarkMode}
+            trackColor={{ false: "#e5e5e5", true: "#93c5fd" }}
+            thumbColor={darkMode ? "#2563eb" : "#fff"}
+          />
+        </View>
+      </View>
+
+      {/* Privacy Section */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Privacy</Text>
+
+        <TouchableOpacity style={styles.menuItem}>
+          <Text style={styles.menuLabel}>Privacy Policy</Text>
+          <Text style={styles.menuArrow}>→</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.menuItem}>
+          <Text style={styles.menuLabel}>Terms of Service</Text>
+          <Text style={styles.menuArrow}>→</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.menuItem}>
+          <Text style={styles.menuLabel}>Export My Data</Text>
+          <Text style={styles.menuArrow}>→</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Support Section */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Support</Text>
+
+        <TouchableOpacity style={styles.menuItem}>
+          <Text style={styles.menuLabel}>Help Center</Text>
+          <Text style={styles.menuArrow}>→</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.menuItem}>
+          <Text style={styles.menuLabel}>Contact Us</Text>
+          <Text style={styles.menuArrow}>→</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.menuItem}>
+          <Text style={styles.menuLabel}>App Version</Text>
+          <Text style={styles.menuValue}>1.0.0</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Danger Zone */}
+      <View style={styles.section}>
+        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+          <Text style={styles.logoutButtonText}>Logout</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.deleteButton}
+          onPress={handleDeleteAccount}
+        >
+          <Text style={styles.deleteButtonText}>Delete Account</Text>
+        </TouchableOpacity>
+      </View>
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: "#f5f5f5" },
+  header: { backgroundColor: "#2563eb", padding: 24, alignItems: "center" },
+  avatar: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: "#fff",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  avatarText: { fontSize: 32, fontWeight: "bold", color: "#2563eb" },
+  name: { fontSize: 20, fontWeight: "bold", color: "#fff" },
+  email: { fontSize: 14, color: "#bfdbfe", marginTop: 4 },
+  roleBadge: {
+    backgroundColor: "rgba(255,255,255,0.2)",
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginTop: 8,
+  },
+  roleText: { color: "#fff", fontSize: 12, fontWeight: "600" },
+  section: { padding: 16 },
+  sectionTitle: { fontSize: 12, fontWeight: "600", color: "#999", marginBottom: 8, textTransform: "uppercase" },
+  menuItem: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 8,
+  },
+  menuLabel: { fontSize: 16, color: "#333" },
+  menuValue: { fontSize: 14, color: "#999" },
+  menuArrow: { fontSize: 16, color: "#999" },
+  logoutButton: {
+    backgroundColor: "#fff",
+    padding: 16,
+    borderRadius: 12,
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  logoutButtonText: { fontSize: 16, color: "#2563eb", fontWeight: "600" },
+  deleteButton: {
+    backgroundColor: "#fff",
+    padding: 16,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+  deleteButtonText: { fontSize: 16, color: "#ef4444", fontWeight: "600" },
+});
+```
+
+
+### Push Notifications Service
+
+Create `src/services/notifications.ts`:
+
+```typescript
+import * as Notifications from "expo-notifications";
+import * as Device from "expo-device";
+import { Platform } from "react-native";
+
+// Configure notification behavior
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+  }),
+});
+
+export async function registerForPushNotifications(): Promise<string | null> {
+  let token: string | null = null;
+
+  if (Platform.OS === "android") {
+    await Notifications.setNotificationChannelAsync("default", {
+      name: "default",
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+    });
+  }
+
+  if (Device.isDevice) {
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+
+    if (existingStatus !== "granted") {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+
+    if (finalStatus !== "granted") {
+      console.log("Push notification permission not granted");
+      return null;
+    }
+
+    // Get Expo push token
+    const { data: tokenData } = await Notifications.getExpoPushTokenAsync();
+    token = tokenData;
+  } else {
+    console.log("Push notifications require a physical device");
+  }
+
+  return token;
+}
+
+export async function schedulePushNotification(
+  title: string,
+  body: string,
+  data?: Record<string, unknown>
+): Promise<string> {
+  return await Notifications.scheduleNotificationAsync({
+    content: { title, body, data },
+    trigger: null, // Immediate
+  });
+}
+
+export async function scheduleDelayedNotification(
+  title: string,
+  body: string,
+  seconds: number,
+  data?: Record<string, unknown>
+): Promise<string> {
+  return await Notifications.scheduleNotificationAsync({
+    content: { title, body, data },
+    trigger: { seconds, type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL },
+  });
+}
+
+export function addNotificationReceivedListener(
+  handler: (notification: Notifications.Notification) => void
+): Notifications.Subscription {
+  return Notifications.addNotificationReceivedListener(handler);
+}
+
+export function addNotificationResponseReceivedListener(
+  handler: (response: Notifications.NotificationResponse) => void
+): Notifications.Subscription {
+  return Notifications.addNotificationResponseReceivedListener(handler);
+}
+```
+
+### Offline Storage Service
+
+Create `src/services/offline-storage.ts`:
+
+```typescript
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+const PREDICTIONS_KEY = "cached_predictions";
+const SETTINGS_KEY = "user_settings";
+
+interface CachedPrediction {
+  id: string;
+  diagnosis: string;
+  confidence: number;
+  created_at: string;
+  cached_at: number;
+}
+
+interface CachedSettings {
+  notifications_enabled: boolean;
+  dark_mode: boolean;
+  last_sync: number;
+}
+
+export async function cachePrediction(prediction: CachedPrediction): Promise<void> {
+  const existing = await getCachedPredictions();
+  const updated = [prediction, ...existing.filter(p => p.id !== prediction.id)].slice(0, 100);
+  await AsyncStorage.setItem(PREDICTIONS_KEY, JSON.stringify(updated));
+}
+
+export async function getCachedPredictions(): Promise<CachedPrediction[]> {
+  try {
+    const data = await AsyncStorage.getItem(PREDICTIONS_KEY);
+    if (!data) return [];
+
+    const predictions: CachedPrediction[] = JSON.parse(data);
+    // Filter out predictions older than 7 days
+    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    return predictions.filter(p => p.cached_at > sevenDaysAgo);
+  } catch {
+    return [];
+  }
+}
+
+export async function clearPredictionCache(): Promise<void> {
+  await AsyncStorage.removeItem(PREDICTIONS_KEY);
+}
+
+export async function saveSettings(settings: Partial<CachedSettings>): Promise<void> {
+  const existing = await getSettings();
+  const updated = { ...existing, ...settings, last_sync: Date.now() };
+  await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(updated));
+}
+
+export async function getSettings(): Promise<CachedSettings> {
+  try {
+    const data = await AsyncStorage.getItem(SETTINGS_KEY);
+    if (!data) {
+      return {
+        notifications_enabled: true,
+        dark_mode: false,
+        last_sync: Date.now(),
+      };
+    }
+    return JSON.parse(data);
+  } catch {
+    return {
+      notifications_enabled: true,
+      dark_mode: false,
+      last_sync: Date.now(),
+    };
+  }
+}
+```
+
 ---
 
 ## Step 9: Build Configuration

@@ -835,6 +835,297 @@ docker run -d \
 5. **Human Review** → Admin reviews MLflow metrics
 6. **Manual Promotion** → Admin promotes model in MLflow (never auto-promoted)
 
+---
+
+## Step 5.5: Mobile Deployment Pipeline
+
+### Create Mobile Deployment Workflow
+
+Create `.github/workflows/deploy-mobile.yml`:
+
+```yaml
+name: Deploy Mobile
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "SkinLesionMobile/**"
+      - ".github/workflows/deploy-mobile.yml"
+
+env:
+  EAS_BUILD_PROFILE: production
+
+jobs:
+  build-ios:
+    name: Build iOS
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: SkinLesionMobile/package-lock.json
+
+      - name: Setup EAS
+        uses: expo/expo-github-action/setup@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: SkinLesionMobile
+
+      - name: Build iOS (Simulator)
+        if: github.event_name == 'pull_request'
+        run: eas build --platform ios --profile preview --non-interactive
+        working-directory: SkinLesionMobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Build iOS (Production)
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: eas build --platform ios --profile production --non-interactive
+        working-directory: SkinLesionMobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-build
+          path: SkinLesionMobile/android-key.keystore
+          retention-days: 1
+
+  build-android:
+    name: Build Android
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: SkinLesionMobile/package-lock.json
+
+      - name: Setup EAS
+        uses: expo/expo-github-action/setup@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: SkinLesionMobile
+
+      - name: Build Android (Preview)
+        if: github.event_name == 'pull_request'
+        run: eas build --platform android --profile preview --non-interactive
+        working-directory: SkinLesionMobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Build Android (Production)
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: eas build --platform android --profile production --non-interactive
+        working-directory: SkinLesionMobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-build
+          path: SkinLesionMobile/android/app/build/outputs/apk/**/*.apk
+          retention-days: 1
+
+  submit-ios:
+    name: Submit iOS to App Store
+    needs: build-ios
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup EAS
+        uses: expo/expo-github-action/setup@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Submit iOS App
+        run: eas submit --platform ios --latest --non-interactive
+        working-directory: SkinLesionMobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+  submit-android:
+    name: Submit Android to Play Store
+    needs: build-android
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup EAS
+        uses: expo/expo-github-action/setup@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Submit Android App
+        run: eas submit --platform android --latest --non-interactive
+        working-directory: SkinLesionMobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          ANDROID_SERVICE_ACCOUNT_KEY_PATH: ./path-to-service-account.json
+```
+
+### Create Database Migration Workflow
+
+Create `.github/workflows/db-migration.yml`:
+
+```yaml
+name: Database Migrations
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/db-migration.yml"
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  migrate:
+    name: Run Database Migrations
+    runs-on: ubuntu-latest
+    environment: staging
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          pip install -r backend/requirements.txt
+          pip install alembic
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get secrets from Secrets Manager
+        run: |
+          DATABASE_URL=$(aws secretsmanager get-secret-value \
+            --secret-id skin-lesion/staging/db-url \
+            --query SecretString \
+            --output text)
+          echo "DATABASE_URL=$DATABASE_URL" >> $GITHUB_ENV
+
+      - name: Run Alembic migrations
+        run: |
+          cd backend
+          alembic upgrade head
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+
+      - name: Verify migration
+        run: |
+          cd backend
+          alembic current
+
+  migrate-production:
+    name: Run Production Migrations
+    needs: migrate
+    runs-on: ubuntu-latest
+    environment: production
+    if: github.ref == 'refs/heads/main'
+    concurrency:
+      group: prod-migrations
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          pip install -r backend/requirements.txt
+          pip install alembic
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get secrets from Secrets Manager
+        run: |
+          DATABASE_URL=$(aws secretsmanager get-secret-value \
+            --secret-id skin-lesion/prod/db-url \
+            --query SecretString \
+            --output text)
+          echo "DATABASE_URL=$DATABASE_URL" >> $GITHUB_ENV
+
+      - name: Create backup snapshot
+        run: |
+          aws rds create-db-snapshot \
+            --db-instance-identifier skin-lesion-prod \
+            --snapshot-identifier pre-migration-$(date +%Y%m%d%H%M)
+        continue-on-error: true
+
+      - name: Run Alembic migrations (dry run first)
+        run: |
+          cd backend
+          alembic upgrade head --dry-run
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+
+      - name: Manual approval for production migrations
+        run: |
+          echo "Production migration requires manual approval"
+          echo "Run the following after approval:"
+          echo "alembic upgrade head"
+
+      - name: Notify failure
+        if: failure()
+        run: |
+          echo "Database migration failed"
+          # Would send Slack/email notification here
+```
+
 ### Curation Pipeline Summary
 
 | Stage | Actor | Action | Storage |

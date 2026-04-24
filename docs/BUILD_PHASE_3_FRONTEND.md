@@ -4,22 +4,40 @@
 
 ---
 
+## Before You Build: Critical Questions to Answer First
+
+### System Architect Questions
+- [ ] **How does the frontend handle JWT token expiry during long sessions?** Cognito access tokens expire after 1 hour. A doctor reviewing cases for 90 minutes will get a 401 mid-session. You must implement silent token refresh using Cognito's refresh token before the access token expires. Use `@aws-amplify/auth`'s `fetchAuthSession()` which handles refresh automatically - do not manage tokens manually.
+- [ ] **What is the API base URL for each environment?** You need `NEXT_PUBLIC_API_URL` set per environment: `http://localhost:8080` (local), a staging ALB DNS (staging), and the production ALB DNS (prod). Do not hardcode any URL.
+- [ ] **Does the doctor dashboard need pagination?** A doctor could have 500 pending cases. A single query returning all 500 with their images would kill the page load. Plan for server-side pagination from day 1 - `GET /predictions?status=pending_review&page=1&limit=20`.
+- [ ] **What is the loading state UX for Grad-CAM?** Heatmap generation takes 0.5-2 seconds. The UI must show a skeleton loader, not a blank image. Design this state before building the component.
+
+### Data Engineer Questions
+- [ ] **How does the frontend pass patient demographics to the backend?** The consent flow should optionally capture age and anatomical localization at submission time. These feed `patient_demographics` in `training_cases`. If the UI never asks for this, the field will always be null and you lose the RQ6 demographic robustness tracking.
+- [ ] **What fields are shown in the doctor review card?** Doctors need to see: (1) the original image, (2) the AI prediction + confidence, (3) the Grad-CAM overlay, (4) the disagreement score with a "Low confidence - verify in person" flag if > 0.5, and (5) any prior expert opinions on the same case.
+
+### AI Engineer Questions
+- [ ] **How is the `disagreement_score` displayed to the user?** A raw number like `0.62` means nothing to a patient or doctor. Map it to a human-readable label: `< 0.3 = "High confidence"`, `0.3-0.5 = "Moderate confidence"`, `> 0.5 = "Review recommended - AI uncertain"`. Never show the raw float.
+- [ ] **Does the patient see the calibrated or raw confidence score?** Always show calibrated confidence. A raw softmax of 0.94 is not 94% real-world accuracy. Add a tooltip explaining: "This score reflects how certain the AI system is, calibrated on a test dataset. It is not a clinical diagnosis."
+- [ ] **What do you show when the `prediction_id` expires (Redis TTL)?** If a patient returns after 1 hour to request the heatmap, the prediction is gone from Redis. The UI must handle the 404 gracefully: "This analysis has expired. Please upload your image again to generate a new heatmap."
+
+---
+
 ## Overview
 
-The web frontend is where users interact with our application. We need:
-1. Public pages (landing, login, register)
-2. Patient dashboard (upload images, view history)
-3. Doctor dashboard (view all predictions, add expert opinions)
-4. Admin dashboard (approve doctors, view stats)
-5. Authentication integration with AWS Cognito
+The web frontend provides role-specific interfaces for three user types:
+1. **Public pages**: landing, login, register
+2. **Patient dashboard**: upload images, view prediction + heatmap, consent to training, view history
+3. **Doctor dashboard**: case review queue, Grad-CAM viewer, expert opinion submission, batch review
+4. **Admin dashboard**: doctor approval queue, training pool management, model promotion, system stats
 
 ### Technology Stack
 - **Framework**: Next.js 14 (App Router)
 - **Language**: TypeScript
 - **Styling**: Tailwind CSS
 - **State Management**: React Context + hooks
-- **Auth**: AWS Cognito (via Amplify or custom)
-- **API Client**: Native fetch with typed interfaces
+- **Auth**: AWS Amplify v6 (handles token refresh automatically)
+- **API Client**: Native fetch with typed interfaces + automatic token injection
 
 ---
 
@@ -2027,6 +2045,462 @@ export default function AdminDashboard() {
 
 ---
 
+## Step 13.5: Landing Page
+
+Create `app/page.tsx` (public landing page):
+
+```typescript
+import Link from "next/link";
+
+export default function LandingPage() {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+      {/* Header */}
+      <header className="bg-white shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center h-16">
+            <div className="flex items-center gap-2">
+              <span className="text-2xl">🏥</span>
+              <span className="font-bold text-xl text-gray-900">SkinLesionAI</span>
+            </div>
+            <div className="flex items-center gap-4">
+              <Link
+                href="/login"
+                className="text-gray-600 hover:text-gray-900 font-medium"
+              >
+                Sign In
+              </Link>
+              <Link
+                href="/register"
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700"
+              >
+                Get Started
+              </Link>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* Hero Section */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+          <div>
+            <h1 className="text-5xl font-bold text-gray-900 leading-tight">
+              AI-Powered Skin Lesion Analysis
+            </h1>
+            <p className="mt-6 text-xl text-gray-600 leading-relaxed">
+              Advanced deep learning with explainable AI (Grad-CAM) to help
+              dermatologists and patients understand skin lesion classifications.
+            </p>
+            <div className="mt-8 flex gap-4">
+              <Link
+                href="/register"
+                className="bg-blue-600 text-white px-8 py-4 rounded-xl font-medium hover:bg-blue-700 text-lg"
+              >
+                Start Free Trial
+              </Link>
+              <Link
+                href="/login"
+                className="border-2 border-gray-300 text-gray-700 px-8 py-4 rounded-xl font-medium hover:bg-gray-50 text-lg"
+              >
+                View Demo
+              </Link>
+            </div>
+          </div>
+          <div className="relative">
+            <div className="bg-white rounded-2xl shadow-2xl p-6">
+              <div className="aspect-square bg-gradient-to-br from-blue-100 to-indigo-100 rounded-xl flex items-center justify-center">
+                <span className="text-8xl">🔬</span>
+              </div>
+              <div className="mt-4 text-center">
+                <p className="text-2xl font-bold text-gray-900">Benign</p>
+                <p className="text-gray-500">92% confidence</p>
+              </div>
+            </div>
+            {/* Floating cards */}
+            <div className="absolute -top-4 -right-4 bg-yellow-50 border border-yellow-200 rounded-xl p-4 shadow-lg">
+              <p className="text-sm font-medium text-yellow-800">📊 Focus Area: 23%</p>
+            </div>
+            <div className="absolute -bottom-4 -left-4 bg-green-50 border border-green-200 rounded-xl p-4 shadow-lg">
+              <p className="text-sm font-medium text-green-800">✅ AI Explainable</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Features Section */}
+      <section className="bg-white py-20">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <h2 className="text-3xl font-bold text-center text-gray-900 mb-12">
+            How It Works
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            {[
+              {
+                step: "1",
+                title: "Upload Image",
+                description: "Upload a dermoscopy image of your skin lesion for analysis",
+                icon: "📤",
+              },
+              {
+                step: "2",
+                title: "AI Analysis",
+                description: "Our deep learning model classifies the lesion with confidence scores",
+                icon: "🤖",
+              },
+              {
+                step: "3",
+                title: "Get Explanations",
+                description: "See exactly where the AI focused with Grad-CAM heatmaps",
+                icon: "🎯",
+              },
+            ].map((feature) => (
+              <div key={feature.step} className="text-center">
+                <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <span className="text-3xl">{feature.icon}</span>
+                </div>
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                  {feature.title}
+                </h3>
+                <p className="text-gray-600">{feature.description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* XAI Methods Section */}
+      <section className="py-20 bg-gray-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <h2 className="text-3xl font-bold text-center text-gray-900 mb-12">
+            Explainable AI Methods
+          </h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+            {[
+              { name: "Grad-CAM", desc: "Standard gradient-weighted CAM" },
+              { name: "Grad-CAM++", desc: "Improved localization accuracy" },
+              { name: "EigenCAM", desc: "Eigenvector-based activation" },
+              { name: "LayerCAM", desc: "Multi-layer gradient combination" },
+            ].map((method) => (
+              <div key={method.name} className="bg-white rounded-xl p-6 shadow-sm">
+                <h3 className="font-bold text-gray-900 mb-2">{method.name}</h3>
+                <p className="text-sm text-gray-600">{method.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Privacy Section */}
+      <section className="py-20 bg-white">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <h2 className="text-3xl font-bold text-gray-900 mb-6">
+            Your Privacy is Protected
+          </h2>
+          <p className="text-lg text-gray-600 mb-8">
+            Images are processed temporarily and never stored without explicit consent.
+            GDPR compliant with full data export and deletion rights.
+          </p>
+          <Link
+            href="/privacy"
+            className="text-blue-600 font-medium hover:underline"
+          >
+            Read our Privacy Policy →
+          </Link>
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="bg-gray-900 text-gray-400 py-12">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+            <div>
+              <div className="flex items-center gap-2 mb-4">
+                <span className="text-2xl">🏥</span>
+                <span className="font-bold text-xl text-white">SkinLesionAI</span>
+              </div>
+              <p className="text-sm">
+                AI-powered skin lesion analysis with explainable AI.
+              </p>
+            </div>
+            <div>
+              <h4 className="font-semibold text-white mb-4">Product</h4>
+              <ul className="space-y-2 text-sm">
+                <li><Link href="/features" className="hover:text-white">Features</Link></li>
+                <li><Link href="/pricing" className="hover:text-white">Pricing</Link></li>
+                <li><Link href="/demo" className="hover:text-white">Demo</Link></li>
+              </ul>
+            </div>
+            <div>
+              <h4 className="font-semibold text-white mb-4">Legal</h4>
+              <ul className="space-y-2 text-sm">
+                <li><Link href="/privacy" className="hover:text-white">Privacy Policy</Link></li>
+                <li><Link href="/terms" className="hover:text-white">Terms of Service</Link></li>
+                <li><Link href="/hipaa" className="hover:text-white">HIPAA Compliance</Link></li>
+              </ul>
+            </div>
+            <div>
+              <h4 className="font-semibold text-white mb-4">Contact</h4>
+              <ul className="space-y-2 text-sm">
+                <li>support@skinlesion.com</li>
+                <li>Medical Inquiries: med@skinlesion.com</li>
+              </ul>
+            </div>
+          </div>
+          <div className="border-t border-gray-800 mt-8 pt-8 text-sm text-center">
+            <p>© 2024 SkinLesionAI. All rights reserved. For medical emergencies, call 911.</p>
+          </div>
+        </div>
+      </footer>
+    </div>
+  );
+}
+```
+
+
+### Error Boundary Component
+
+Create `components/ui/ErrorBoundary.tsx`:
+
+```typescript
+"use client";
+
+import { Component, ReactNode } from "react";
+
+interface Props {
+  children: ReactNode;
+  fallback?: ReactNode;
+}
+
+interface State {
+  hasError: boolean;
+  error?: Error;
+}
+
+export default class ErrorBoundary extends Component<Props, State> {
+  constructor(props: Props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error: Error): State {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error("ErrorBoundary caught an error:", error, errorInfo);
+    // In production, would log to error tracking service (Sentry)
+  }
+
+  render() {
+    if (this.state.hasError) {
+      if (this.props.fallback) {
+        return this.props.fallback;
+      }
+
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-gray-50">
+          <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 text-center">
+            <div className="text-6xl mb-4">😵</div>
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">
+              Something went wrong
+            </h1>
+            <p className="text-gray-600 mb-6">
+              We encountered an unexpected error. Please try refreshing the page.
+            </p>
+            <div className="space-y-3">
+              <button
+                onClick={() => window.location.reload()}
+                className="w-full bg-blue-600 text-white py-3 rounded-xl font-medium hover:bg-blue-700"
+              >
+                Refresh Page
+              </button>
+              <button
+                onClick={() => {
+                  this.setState({ hasError: false });
+                  window.location.href = "/";
+                }}
+                className="w-full border border-gray-300 py-3 rounded-xl font-medium hover:bg-gray-50"
+              >
+                Go to Homepage
+              </button>
+            </div>
+            {process.env.NODE_ENV === "development" && this.state.error && (
+              <details className="mt-6 text-left">
+                <summary className="cursor-pointer text-sm text-gray-500">
+                  Error Details
+                </summary>
+                <pre className="mt-2 p-4 bg-gray-100 rounded-lg text-xs overflow-auto">
+                  {this.state.error.message}
+                  {"\n\n"}
+                  {this.state.error.stack}
+                </pre>
+              </details>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+```
+
+
+### Privacy Policy Page
+
+Create `app/privacy/page.tsx`:
+
+```typescript
+export default function PrivacyPolicyPage() {
+  return (
+    <div className="min-h-screen bg-gray-50 py-12">
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="bg-white rounded-2xl shadow-xl p-8">
+          <h1 className="text-3xl font-bold text-gray-900 mb-6">
+            Privacy Policy
+          </h1>
+          <p className="text-sm text-gray-500 mb-8">
+            Last updated: January 1, 2024
+          </p>
+
+          <div className="prose prose-gray max-w-none">
+            <section className="mb-8">
+              <h2 className="text-xl font-semibold text-gray-900 mb-3">
+                1. Information We Collect
+              </h2>
+              <p className="text-gray-600">
+                We collect skin lesion images that you voluntarily upload for analysis,
+                along with diagnostic results and any feedback you provide. We also collect
+                account information including email and medical credentials (for doctors).
+              </p>
+            </section>
+
+            <section className="mb-8">
+              <h2 className="text-xl font-semibold text-gray-900 mb-3">
+                2. How We Use Your Information
+              </h2>
+              <ul className="list-disc pl-6 text-gray-600 space-y-2">
+                <li>To provide AI-powered skin lesion analysis</li>
+                <li>To generate explainable AI visualizations (Grad-CAM)</li>
+                <li>To improve our machine learning models (only with explicit consent)</li>
+                <li>To comply with legal obligations</li>
+              </ul>
+            </section>
+
+            <section className="mb-8">
+              <h2 className="text-xl font-semibold text-gray-900 mb-3">
+                3. Data Retention and Deletion
+              </h2>
+              <p className="text-gray-600">
+                <strong>Images:</strong> Images are stored temporarily for processing and are
+                automatically deleted after 24 hours unless you provide explicit consent for
+                training data contribution.
+              </p>
+              <p className="text-gray-600 mt-4">
+                <strong>Consented Data:</strong> If you opt-in to contribute your anonymized
+                data for model training, images will be stored securely in our training pool
+                with proper access controls.
+              </p>
+              <p className="text-gray-600 mt-4">
+                <strong>Account Data:</strong> You may request deletion of your account and
+                all associated data at any time by contacting privacy@skinlesion.com or using
+                the in-app deletion feature.
+              </p>
+            </section>
+
+            <section className="mb-8">
+              <h2 className="text-xl font-semibold text-gray-900 mb-3">
+                4. Your Rights Under GDPR
+              </h2>
+              <ul className="list-disc pl-6 text-gray-600 space-y-2">
+                <li><strong>Right to Access:</strong> Request a copy of your data</li>
+                <li><strong>Right to Rectification:</strong> Correct inaccurate data</li>
+                <li><strong>Right to Erasure:</strong> Request deletion of your data</li>
+                <li><strong>Right to Portability:</strong> Receive your data in a portable format</li>
+                <li><strong>Right to Object:</strong> Object to processing of your data</li>
+              </ul>
+            </section>
+
+            <section className="mb-8">
+              <h2 className="text-xl font-semibold text-gray-900 mb-3">
+                5. Data Security
+              </h2>
+              <p className="text-gray-600">
+                We implement industry-standard security measures including AES-256 encryption
+                at rest, TLS 1.2+ in transit, and strict access controls. Our infrastructure
+                is hosted on AWS with SOC 2 Type II compliance.
+              </p>
+            </section>
+
+            <section className="mb-8">
+              <h2 className="text-xl font-semibold text-gray-900 mb-3">
+                6. Contact Us
+              </h2>
+              <p className="text-gray-600">
+                For privacy-related inquiries or to exercise your data rights:
+              </p>
+              <ul className="list-none mt-4 text-gray-600 space-y-2">
+                <li>Email: privacy@skinlesion.com</li>
+                <li>Mail: SkinLesionAI, Attn: Privacy, 123 Medical Center Dr, Boston, MA 02115</li>
+              </ul>
+            </section>
+          </div>
+
+          <div className="mt-8 pt-8 border-t">
+            <button
+              onClick={() => window.history.back()}
+              className="text-blue-600 font-medium hover:underline"
+            >
+              ← Back
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+```
+
+
+### Root Layout with Error Boundary
+
+Update `app/layout.tsx` to include the error boundary:
+
+```typescript
+import type { Metadata } from "next";
+import { Inter } from "next/font/google";
+import "./globals.css";
+import ErrorBoundary from "@/components/ui/ErrorBoundary";
+
+const inter = Inter({ subsets: ["latin"] });
+
+export const metadata: Metadata = {
+  title: "SkinLesionAI - AI-Powered Skin Lesion Analysis",
+  description: "Advanced deep learning with explainable AI for skin lesion classification",
+};
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="en">
+      <body className={inter.className}>
+        <ErrorBoundary>
+          {children}
+        </ErrorBoundary>
+      </body>
+    </html>
+  );
+}
+```
+
+
+---
+
 ## Step 14: Environment Configuration
 
 Create `.env.local`:
@@ -2116,6 +2590,317 @@ npm run lint
 # Test
 npm test
 ```
+
+---
+
+---
+
+## Role-Specific UI Specifications
+
+These are the detailed requirements per role. Each role has fundamentally different needs and should feel like a distinct application even though they share the same codebase.
+
+### Patient Dashboard
+
+The patient experience is the highest-stakes UI. A confusing or alarming presentation of AI results could cause unnecessary panic or false reassurance.
+
+**Upload Flow:**
+1. Drag-and-drop zone with visual states: idle, dragging, uploading (progress bar), processing (spinner), complete.
+2. Maximum file size: 10MB. Show error inline if exceeded.
+3. Accepted formats: JPG, PNG, WEBP. Show this on the upload zone, not just on error.
+4. After upload: immediately show the original image preview while processing.
+
+**Prediction Result Card:**
+```
+┌──────────────────────────────────────────────────────┐
+│  Analysis Result                                     │
+│                                                      │
+│  ┌──────────────┐   Diagnosis: Melanocytic Nevi      │
+│  │  [Image]     │   Confidence: High (87%)           │
+│  │              │                                    │
+│  │  [Heatmap]   │   ⚠ This is not a medical         │
+│  │  button      │     diagnosis. Consult a doctor.   │
+│  └──────────────┘                                    │
+│                                                      │
+│  Confidence levels: > 70% High | 40-70% Moderate    │
+│                     < 40% Low (review recommended)  │
+│                                                      │
+│  [View AI Explanation] [Save to History]             │
+└──────────────────────────────────────────────────────┘
+```
+
+**Confidence Display Rules:**
+- NEVER show a raw float like `0.874`.
+- Map to: `High (87%)`, `Moderate (62%)`, `Low (38%)`.
+- If `disagreement_score > 0.5`, show yellow warning banner: "The AI system has low confidence on this image. We strongly recommend in-person dermatologist evaluation."
+- Always show the disclaimer below the result: "This AI tool is for screening purposes only, not clinical diagnosis."
+
+**Heatmap Viewer:**
+- Show side-by-side: original image | heatmap overlay.
+- Add a legend: "Red/warm areas = regions the AI focused on."
+- Method selector: GradCAM | GradCAM++ | EigenCAM | LayerCAM (default: GradCAM).
+- Loading skeleton: show placeholder boxes while heatmap loads.
+
+**Consent UI:**
+```tsx
+// components/ConsentCheckbox.tsx
+// This component must be designed carefully - it is a legal consent mechanism.
+
+<div className="mt-6 p-4 border border-gray-200 rounded-lg">
+  <h3 className="font-semibold">Help improve skin cancer detection</h3>
+  <p className="text-sm text-gray-600 mt-1">
+    You can optionally share this image (anonymously) to help train future
+    AI models. A verified dermatologist will review any shared images.
+    You can withdraw consent at any time in your account settings.
+  </p>
+  <label className="flex items-start gap-3 mt-3 cursor-pointer">
+    <input
+      type="checkbox"
+      className="mt-1"
+      // Unchecked by default - explicit opt-in only
+      defaultChecked={false}
+      onChange={(e) => setConsentGiven(e.target.checked)}
+    />
+    <span className="text-sm">
+      I consent to share this image for AI research purposes.
+      I understand I can withdraw this consent at any time.
+    </span>
+  </label>
+  {/* Show age/localization fields ONLY if consent is given */}
+  {consentGiven && (
+    <div className="mt-3 grid grid-cols-2 gap-3">
+      <input type="number" placeholder="Your age (optional)" />
+      <select>
+        <option value="">Body location (optional)</option>
+        <option value="back">Back</option>
+        <option value="face">Face</option>
+        {/* ... */}
+      </select>
+    </div>
+  )}
+</div>
+```
+
+**Token Refresh (CRITICAL - implement before any dashboard):**
+```typescript
+// lib/auth.ts
+import { fetchAuthSession } from "@aws-amplify/auth";
+
+export async function getAuthHeaders(): Promise<Record<string, string>> {
+  // fetchAuthSession() automatically uses the refresh token if the access token is expired.
+  // This is why we use Amplify - do not manually manage tokens.
+  const session = await fetchAuthSession();
+  const token = session.tokens?.accessToken?.toString();
+  
+  if (!token) {
+    // Session is expired and refresh failed - redirect to login
+    window.location.href = "/login";
+    throw new Error("Not authenticated");
+  }
+  
+  return { Authorization: `Bearer ${token}` };
+}
+
+// Use in all API calls:
+export async function apiCall<T>(path: string, options?: RequestInit): Promise<T> {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...options,
+    headers: { ...options?.headers, ...headers },
+  });
+  
+  if (response.status === 401) {
+    window.location.href = "/login";
+    throw new Error("Session expired");
+  }
+  
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: "Unknown error" }));
+    throw new APIError(error.detail, response.status);
+  }
+  
+  return response.json();
+}
+```
+
+---
+
+### Doctor Dashboard
+
+Doctors are power users doing repetitive work. The design priority is efficiency - minimizing clicks per case, showing all relevant information at once, and supporting bulk operations.
+
+**Case Review Queue:**
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  Pending Cases (23)                    [Sort: Newest] [Filter ▼] │
+├──────────────────────────────────────────────────────────────────┤
+│  ┌────────┬──────────┬────────────┬──────────┬─────────────────┐ │
+│  │ Image  │ AI Diag  │ Confidence │ Uploaded │ Action          │ │
+│  ├────────┼──────────┼────────────┼──────────┼─────────────────┤ │
+│  │ [🖼️]   │ Melanoma │ High (91%) │ 2h ago   │ [Review] [Skip] │ │
+│  │ [🖼️] ⚠│ Nevi     │ Low (38%)  │ 4h ago   │ [Review] [Skip] │ │
+│  │ [🖼️]   │ BCC      │ Mod (67%)  │ 1d ago   │ [Review] [Skip] │ │
+│  └────────┴──────────┴────────────┴──────────┴─────────────────┘ │
+│                                              [Load More]         │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+- ⚠ icon = `disagreement_score > 0.5` (prioritize these for in-person follow-up)
+- Cases sorted newest-first by default (doctors should see recent first)
+- Pagination: 20 per page, "Load More" button (not infinite scroll - doctors need to track progress)
+
+**Case Review Modal:**
+```
+┌───────────────────────────────────────────────────────────────────┐
+│  Case Review                                        Case 14 of 23 │
+├─────────────────────────┬─────────────────────────────────────────┤
+│  Original Image         │  AI Analysis                            │
+│  ┌───────────────────┐  │  Diagnosis: Melanoma                    │
+│  │                   │  │  Confidence: High (91%)                 │
+│  │   [Patient Image] │  │  Model: ResNet50 v2.1                  │
+│  │                   │  │                                         │
+│  └───────────────────┘  │  XAI Heatmap:                          │
+│                         │  ┌───────────────────┐                  │
+│                         │  │  [GradCAM Overlay]│  [EigenCAM]     │
+│                         │  └───────────────────┘                  │
+│                         │  AI Uncertainty: ⚠ High (score: 0.71) │
+├─────────────────────────┴─────────────────────────────────────────┤
+│  Your Expert Opinion                                               │
+│  Diagnosis: [Melanoma ▼]  [Melanocytic Nevi ▼]  [BCC ▼]  [Other]│
+│                                                                    │
+│  Notes: __________________________________________________________ │
+│  ____________________________________________________________ max 500 chars│
+│                                                                    │
+│  [← Previous]  [Skip]  [Submit & Next →]                          │
+└───────────────────────────────────────────────────────────────────┘
+```
+
+**Keyboard shortcuts for efficiency:**
+- `→` or `n` = Next case
+- `←` or `p` = Previous case
+- `s` = Skip
+- `1-7` = Quick diagnosis select (number keys map to the 7 HAM10000 classes)
+- `Enter` = Submit current opinion
+
+---
+
+### Admin Dashboard
+
+Admins are system operators, not medical reviewers. The design priority is operational visibility and control.
+
+**Admin Home - System Status:**
+```
+┌─────────────────────────────────────────────────────────┐
+│  System Overview                              Live       │
+├────────────────┬─────────────────┬────────────────────  │
+│  Training Pool │  Pending Doctors│  Model Status        │
+│  4,832 / 5,000 │  3 awaiting     │  v2.1 Active        │
+│  ████████░░░░  │  approval       │  AUC: 0.923         │
+│  [View Pool]   │  [Review]       │  [View MLflow]      │
+├────────────────┴─────────────────┴────────────────────  │
+│  Recent Activity                                        │
+│  • Dr. Smith submitted 12 opinions (2h ago)             │
+│  • 5 cases approved to training pool (4h ago)           │
+│  • Model v2.1 promoted to production (3 days ago)       │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Doctor Approval Panel:**
+```
+┌──────────────────────────────────────────────────────────┐
+│  Pending Doctor Approvals (3)                            │
+├────────────────────────────────────────────────────────  │
+│  Dr. Maria Santos                                        │
+│  License: CRM-SP 123456                      Submitted 2d│
+│  Specialty: Dermatology                                  │
+│  Institution: Hospital São Paulo                        │
+│  [View License Doc]  [Approve ✓]  [Reject ✗]           │
+├────────────────────────────────────────────────────────  │
+│  Dr. James Okonkwo                                       │
+│  License: GMC 7654321                        Submitted 1d│
+│  ...                                                     │
+└──────────────────────────────────────────────────────────┘
+```
+
+**Training Pool Management:**
+- Show class distribution chart before enabling "Trigger Retraining" button.
+- "Trigger Retraining" button is disabled and shows tooltip "Need 5,000 cases (current: 4,832)" until threshold is met.
+- After clicking Trigger Retraining: show a confirmation modal with the class distribution table and require admin to type "CONFIRM" before proceeding.
+
+**Model Promotion:**
+```
+┌──────────────────────────────────────────────────────────┐
+│  Model Version Ready for Review                          │
+│  Version: v2.2 (trained 2026-04-22)                     │
+│                                                          │
+│  Performance Comparison:                                 │
+│  ┌──────────────┬───────────┬───────────┐               │
+│  │ Metric       │ Current   │ Candidate │               │
+│  │              │  (v2.1)   │  (v2.2)   │               │
+│  ├──────────────┼───────────┼───────────┤               │
+│  │ Overall AUC  │ 0.923     │ 0.931 ↑  │               │
+│  │ HAM10000 AUC │ 0.921     │ 0.919 ↓  │ ← WATCH THIS  │
+│  │ Sensitivity  │ 0.88      │ 0.91 ↑  │               │
+│  │ Specificity  │ 0.91      │ 0.90 ↓  │               │
+│  └──────────────┴───────────┴───────────┘               │
+│                                                          │
+│  ⚠ HAM10000 AUC decreased by 0.002.                    │
+│    This is within acceptable range (< 0.01 drop).      │
+│                                                          │
+│  [View Full MLflow Report]  [Promote to Production]     │
+└──────────────────────────────────────────────────────────┘
+```
+
+---
+
+### On Chatbots: What Would Be Required
+
+There are no chatbots in this codebase. If you want to add them, here is the minimum viable implementation per role.
+
+**Shared infrastructure:**
+```typescript
+// app/api/chat/route.ts (Next.js route handler - BFF pattern)
+import Anthropic from "@anthropic-ai/sdk";
+
+const client = new Anthropic();
+
+export async function POST(req: Request) {
+  const { messages, role } = await req.json();
+  const systemPrompt = SYSTEM_PROMPTS[role]; // role-specific prompt
+  
+  const stream = await client.messages.stream({
+    model: "claude-sonnet-4-6",
+    max_tokens: 1024,
+    system: systemPrompt,
+    messages,
+  });
+  
+  return new Response(stream.toReadableStream(), {
+    headers: { "Content-Type": "text/event-stream" },
+  });
+}
+
+const SYSTEM_PROMPTS = {
+  patient: `You are a skin health education assistant for a medical AI platform.
+    Rules you must follow:
+    - NEVER provide a specific diagnosis for a patient's condition.
+    - ALWAYS recommend consulting a qualified dermatologist for any concerns.
+    - You can explain what dermatological terms mean in plain language.
+    - You can explain how the AI classification system works in general terms.
+    - Do not discuss treatments or medications.`,
+  
+  doctor: `You are a clinical decision support assistant for verified dermatologists.
+    You can: explain AI confidence scores and what they mean, retrieve case statistics
+    from the platform, look up dermatological terminology and classification systems.
+    You cannot: make or override clinical diagnoses. Always defer final judgment to the doctor.`,
+  
+  admin: `You are an operations assistant for the platform admin.
+    You can: summarize training pool statistics, explain system metrics, generate
+    reports on doctor activity and training data quality. You have read-only access
+    to system data.`,
+};
+```
+
+This is approximately 2-3 days of work per role chatbot (prompt engineering, UI component, backend route, access control). All three share the same infrastructure but have entirely different prompts and tool access.
 
 ---
 

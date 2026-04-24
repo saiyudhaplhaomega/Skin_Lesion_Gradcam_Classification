@@ -4,6 +4,44 @@
 
 ---
 
+## Before You Apply: Critical Questions to Answer First
+
+Work through these before running `make apply`. Infrastructure mistakes are expensive to fix and some (like security group misconfiguration) are dangerous.
+
+### System Architect Questions
+- [ ] **Are ECS tasks in the App subnet, NOT the public subnet?** Verify your ECS service Terraform resource uses `app_subnet_ids`, not `public_subnet_ids`. Tasks with public IPs bypass the ALB and all security controls. Check the `aws_ecs_service` resource: `assign_public_ip = "DISABLED"`.
+- [ ] **Is ElastiCache (Redis) provisioned?** There is no ElastiCache module in the current Terraform. Without a shared Redis instance, running multiple ECS tasks (3 are shown in the architecture) means each task has its own in-memory predictions store. A `/explain` call routed to a different task than the `/predict` call will return 404. This is a required module before backend deployment.
+- [ ] **Is there a Terraform module for MLflow?** MLflow is referenced in the architecture and all backend docs but has no Terraform resource. It needs an ECS service, an RDS backing store, an S3 artifact bucket, a security group, and a VPN or bastion for admin access to the UI. Plan this before any model training code goes into CI/CD.
+- [ ] **Does the ECS service have `health_check_grace_period_seconds = 120`?** Model weights load from S3 at container startup (20-40 seconds). Without a grace period, ECS will kill tasks in a restart loop before the model is ready. This must be set before first deployment.
+- [ ] **Are SQS queues provisioned for the training pipeline?** The training curation pipeline (consent → doctor validation → admin approval → S3 write) has no message queue. Without SQS, each step is a synchronous API call with no retry on failure. Add an SQS module with queues for each pipeline stage and a DLQ for failed events.
+
+### Data Engineer Questions
+- [ ] **Is S3 bucket versioning enabled for the training bucket?** Already done (good). But confirm the lifecycle policy includes: delete objects in `rejected/` after 30 days, delete objects in `exports/` after 7 days, and abort incomplete multipart uploads after 1 day.
+- [ ] **Is KMS encryption enabled for RDS?** Already done. Confirm the same KMS key is used for ElastiCache when you provision it - patient prediction data in Redis must be encrypted at rest too.
+- [ ] **Is there a dedicated S3 bucket for MLflow artifacts?** MLflow stores model artifacts, metrics plots, and run metadata in S3. This bucket should have versioning enabled (models are versioned), a separate KMS key (model weights are sensitive), and no lifecycle deletion policy (artifacts must be retained for audit).
+- [ ] **Are RDS automated backups configured?** Verify `backup_retention_period = 7` (or higher) and `backup_window = "03:00-04:00"` (off-peak) in the RDS module. The current rollback procedures mention point-in-time recovery - that requires automated backups to be enabled.
+
+### Security Questions
+- [ ] **Does the WAF protect the ALB?** Already done (good). But the WAF is not protecting the Next.js frontend on Vercel. Patient image uploads going through the Next.js server action are not covered. Consider adding Cloudflare in front of Vercel if WAF coverage on the frontend is required.
+- [ ] **Are Cognito MFA requirements appropriate per role?** Patients have optional MFA. Doctors have required MFA. This is correct. But confirm the admin user creation flow - admins are created manually (no Cognito self-service registration). Where are admin credentials stored? They should use AWS IAM Identity Center, not a Cognito user pool.
+- [ ] **Is the Secrets Manager rotation Lambda actually implemented?** The module has placeholder zip files for rotation. Verify the Lambda code exists and the rotation schedule is active for: DB credentials, API keys, and Cognito app client secrets.
+
+---
+
+## Missing Terraform Modules (Required Before Production)
+
+| Module | Status | Priority | Why Needed |
+|--------|--------|----------|-----------|
+| `elasticache/` | Missing | Critical | Shared Redis for multi-instance ECS predictions store |
+| `sqs/` | Missing | Critical | Async training pipeline with DLQs |
+| `mlflow/` | Missing | High | Model registry and experiment tracking server |
+| `ses-notifications/` | Missing | High | Doctor approval emails, training readiness alerts |
+| `cloudwatch-alarms/` | Missing | High | Alert on inference error rate, latency P99, model drift |
+| `ecs-service/` | Partial | High | ECS service definition (separate from ECS cluster) - health check grace period |
+| `ecr/` | Missing | High | Container image registry for backend Docker images |
+
+---
+
 ## Quick Start
 
 ```bash

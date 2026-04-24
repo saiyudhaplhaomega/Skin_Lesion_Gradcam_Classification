@@ -4,23 +4,50 @@
 
 ---
 
+## Before You Build: Critical Questions to Answer First
+
+Work through these before writing a single line of application code. Each one is a decision that is expensive to change later.
+
+### System Architect Questions
+- [ ] **Is ElastiCache (Redis) provisioned in Terraform?** Without a shared Redis instance, each ECS task has its own in-memory predictions_store. A `/explain` call that hits a different task than the `/predict` call will return 404. This is a guaranteed bug with multiple ECS tasks. Provision ElastiCache before building `/explain`.
+- [ ] **What is the timeout for `/explain`?** Grad-CAM on ResNet50 takes 200-800ms. Set a hard 10s timeout with `asyncio.wait_for()`. A hung CAM generation must not block the entire API.
+- [ ] **What is the ECS health check grace period?** Model weights load from S3 at startup (20-40s). Set `health_check_grace_period_seconds = 120` in Terraform or ECS will restart tasks in a boot loop before the model loads.
+- [ ] **Is MLflow server running and accessible from ECS?** The backend CLAUDE.md shows `MLFLOW_TRACKING_URI=file:./mlruns` for local dev. In production, MLflow needs a server, RDS backend, S3 artifacts, and network access from ECS. Configure this before writing any MLflow integration code.
+
+### Data Engineer Questions
+- [ ] **What is the unique constraint on the consent endpoint?** A patient who double-taps should not create two training pipeline entries. Add `UNIQUE(prediction_id)` to `training_cases` before the endpoint goes live.
+- [ ] **What is the defined schema for `patient_demographics` JSONB?** Write it down now: `{age: int, sex: string, localization: string}`. Without a schema, your retraining scripts will fail on inconsistent JSON two quarters from now.
+- [ ] **When does the raw image get persisted to S3?** Redis TTL is 1 hour. Patient consent + doctor review can span more than 1 hour. If you wait until doctor validation to write the image to S3, the Redis eviction will have already deleted it. Persist the image to S3 at consent time, not at validation time.
+- [ ] **Where is the `deletion_requests` table?** GDPR Article 17 consent withdrawal must be trackable with a completion timestamp. Add this table before building the consent endpoint.
+
+### AI Engineer Questions
+- [ ] **Is your model's confidence score calibrated?** Raw softmax is overconfident. Apply temperature scaling post-training before serving. The calibration script should run as part of the model promotion workflow in MLflow.
+- [ ] **Should Grad-CAM be cached?** Yes - if a user requests the heatmap twice, recalculating it wastes GPU. Store the result in Redis with key `explain:{prediction_id}:{method}` and the same 1-hour TTL as the prediction.
+- [ ] **Do you need a batch inference endpoint?** Doctors reviewing 50 cases will call `/explain` 50 times sequentially. A `POST /explain/batch` endpoint would cut their review time from ~50s to ~5s. Plan this from the start - it changes your Redis key design.
+- [ ] **What are your two CAM methods for production disagreement scoring?** Per RQ4, running two CAM methods and computing Jaccard disagreement is a cheap safety signal. Choose the pair now (recommended: GradCAM + EigenCAM) and design the prediction response to include a `disagreement_score` field from the start.
+
+---
+
 ## Overview
 
 The backend is the core of our application. It handles:
 1. User authentication (JWT validation with Cognito)
 2. Image classification (PyTorch models)
-3. Grad-CAM heatmap generation
+3. Grad-CAM heatmap generation (cached, with disagreement scoring)
 4. Feedback collection with S3 storage
-5. GDPR data exports
-6. Admin operations (doctor approval)
+5. GDPR data exports and deletion requests
+6. Admin operations (doctor approval, training pool management)
+7. Async training pipeline (via SQS event publishing)
 
 ### Technology Stack
 - **Framework**: FastAPI (async, high-performance)
 - **Language**: Python 3.10
 - **Database**: PostgreSQL (via SQLAlchemy async)
-- **Cache**: Redis (for predictions store)
-- **Storage**: S3 (model weights, feedback images)
+- **Cache**: Redis via ElastiCache (shared across all ECS tasks - NOT in-memory)
+- **Storage**: S3 (model weights, training images, GDPR exports)
 - **Auth**: AWS Cognito JWT validation
+- **Message Queue**: SQS (training pipeline events)
+- **Model Registry**: MLflow (server mode, not file:// mode in production)
 
 ---
 
@@ -812,6 +839,656 @@ We also created dependency functions:
 - `get_current_user` - any authenticated user
 - `require_doctor` - only approved doctors
 - `require_admin` - only admins
+
+---
+
+## Step 7.5: ML Model Loader
+
+### Create Model Loader
+
+Create `app/ml/model_loader.py`:
+
+```python
+import torch
+import torchvision.models as models
+from torchvision.models import ResNet50_Weights
+import timm
+import logging
+from typing import Tuple, Optional
+import os
+
+logger = logging.getLogger(__name__)
+
+
+class SkinLesionClassifier:
+    """Loads and manages the skin lesion classification model."""
+
+    def __init__(self):
+        self.model: Optional[torch.nn.Module] = None
+        self.device: str = "cpu"
+        self.model_version: str = "1.0.0"
+        self.model_architecture: str = "resnet50"
+        self.class_names: list = ["benign", "malignant"]
+        self.target_layer_name: str = "layer4"
+
+    def load(self, model_path: str) -> None:
+        """
+        Load model from path or S3.
+
+        Args:
+            model_path: Local path or S3 URI to model weights
+        """
+        try:
+            # Determine device
+            self.device = "cuda" if torch.cuda.is_available() else "cpu"
+            logger.info(f"Using device: {self.device}")
+
+            # Load model architecture
+            if self.model_architecture == "resnet50":
+                self.model = models.resnet50(weights=ResNet50_Weights.DEFAULT)
+            elif self.model_architecture == "efficientnet_b0":
+                self.model = timm.create_model("efficientnet_b0", pretrained=True)
+            elif self.model_architecture == "swin_transformer":
+                self.model = timm.create_model("swin_tiny_patch4_window7_224", pretrained=True)
+            else:
+                # Default to resnet50
+                self.model = models.resnet50(weights=ResNet50_Weights.DEFAULT)
+
+            # Replace classifier head for 2-class output
+            if hasattr(self.model, 'fc'):
+                self.model.fc = torch.nn.Linear(self.model.fc.in_features, 2)
+            elif hasattr(self.model, 'classifier'):
+                self.model.classifier = torch.nn.Linear(
+                    self.model.classifier.in_features, 2
+                )
+
+            # Load weights
+            if model_path.startswith("s3://"):
+                import boto3
+                s3 = boto3.client("s3")
+                bucket, key = model_path.replace("s3://", "").split("/", 1)
+                s3.download_file(bucket, key, "/tmp/model.pth")
+                state_dict = torch.load("/tmp/model.pth", map_location=self.device)
+            else:
+                if os.path.exists(model_path):
+                    state_dict = torch.load(model_path, map_location=self.device)
+                else:
+                    logger.warning(f"Model not found at {model_path}, using ImageNet weights")
+                    self.model_version = "imagenet_fallback"
+                    return
+
+            self.model.load_state_dict(state_dict, strict=False)
+            self.model.to(self.device)
+            self.model.eval()
+
+            # Try to extract version from metadata
+            if "model_version" in state_dict:
+                self.model_version = state_dict["model_version"]
+            elif "metadata" in state_dict and isinstance(state_dict["metadata"], dict):
+                self.model_version = state_dict["metadata"].get("version", "unknown")
+
+            logger.info(f"Model loaded successfully: {self.model_version}")
+
+        except Exception as e:
+            logger.error(f"Failed to load model: {e}")
+            # Fall back to ImageNet weights for development
+            self.model = models.resnet50(weights=ResNet50_Weights.DEFAULT)
+            self.model.fc = torch.nn.Linear(self.model.fc.in_features, 2)
+            self.model.to(self.device)
+            self.model.eval()
+            self.model_version = "imagenet_fallback"
+            logger.warning("Using ImageNet fallback weights")
+
+    def predict(self, image_bytes: bytes) -> Tuple[str, float, dict]:
+        """
+        Run inference on image bytes.
+
+        Args:
+            image_bytes: Raw image bytes
+
+        Returns:
+            Tuple of (diagnosis, confidence, class_probabilities)
+        """
+        from PIL import Image
+        import io
+        from torchvision import transforms
+
+        preprocess = transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ])
+
+        # Load and preprocess image
+        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        input_tensor = preprocess(image).unsqueeze(0).to(self.device)
+
+        # Run inference
+        with torch.no_grad():
+            outputs = self.model(input_tensor)
+            probs = torch.nn.functional.softmax(outputs, dim=1)[0]
+
+        # Extract results
+        pred_class = torch.argmax(probs).item()
+        confidence = probs[pred_class].item()
+        diagnosis = self.class_names[pred_class]
+
+        class_probabilities = {
+            "benign": probs[0].item(),
+            "malignant": probs[1].item(),
+        }
+
+        return diagnosis, confidence, class_probabilities
+
+    def get_target_layer(self):
+        """Get the target layer for Grad-CAM."""
+        if hasattr(self.model, 'layer4'):
+            return self.model.layer4
+        elif hasattr(self.model, 'features'):
+            return self.model.features[-1]
+        return None
+
+
+# Global classifier instance
+classifier = SkinLesionClassifier()
+```
+
+### Create Predictions Store
+
+Create `app/ml/predictions_store.py`:
+
+```python
+import redis
+import json
+import uuid
+from datetime import datetime
+from typing import Optional, Dict, Any
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class PredictionsStore:
+    """
+    In-memory + Redis store for predictions.
+    Predictions are stored temporarily for explain/feedback calls.
+    TTL is 1 hour by default.
+    """
+
+    def __init__(self, redis_url: str = "redis://localhost:6379/0", ttl: int = 3600):
+        self.ttl = ttl
+        self._memory_store: Dict[str, Dict[str, Any]] = {}
+
+        # Try to connect to Redis
+        try:
+            self.redis_client = redis.from_url(redis_url, decode_responses=True)
+            self.redis_client.ping()
+            self.use_redis = True
+            logger.info("Using Redis for predictions store")
+        except Exception as e:
+            logger.warning(f"Redis not available, using in-memory store: {e}")
+            self.redis_client = None
+            self.use_redis = False
+
+    def create(
+        self,
+        user_id: str,
+        diagnosis: str,
+        confidence: float,
+        class_probabilities: dict,
+        model_version: str,
+        processing_time_ms: int,
+        image_bytes: bytes,
+        original_filename: str = None,
+        model = None,
+        target_layer = None,
+    ) -> str:
+        """
+        Create a new prediction entry.
+
+        Returns:
+            prediction_id string
+        """
+        prediction_id = str(uuid.uuid4())
+
+        data = {
+            "prediction_id": prediction_id,
+            "user_id": user_id,
+            "diagnosis": diagnosis,
+            "confidence": confidence,
+            "class_probabilities": class_probabilities,
+            "model_version": model_version,
+            "processing_time_ms": processing_time_ms,
+            "image_bytes": image_bytes.hex() if isinstance(image_bytes, bytes) else image_bytes,
+            "original_filename": original_filename,
+            "created_at": datetime.utcnow().isoformat(),
+            "model": model,
+            "target_layer": target_layer,
+        }
+
+        if self.use_redis:
+            try:
+                self.redis_client.setex(
+                    f"prediction:{prediction_id}",
+                    self.ttl,
+                    json.dumps(data, default=str),
+                )
+            except Exception as e:
+                logger.error(f"Redis write failed, using memory: {e}")
+                self._memory_store[prediction_id] = data
+        else:
+            self._memory_store[prediction_id] = data
+
+        return prediction_id
+
+    def get(self, prediction_id: str) -> Optional[Dict[str, Any]]:
+        """Get a prediction by ID."""
+        if self.use_redis:
+            try:
+                data = self.redis_client.get(f"prediction:{prediction_id}")
+                if data:
+                    result = json.loads(data)
+                    # Convert hex back to bytes
+                    if "image_bytes" in result and isinstance(result["image_bytes"], str):
+                        result["image_bytes"] = bytes.fromhex(result["image_bytes"])
+                    return result
+            except Exception as e:
+                logger.error(f"Redis read failed, using memory: {e}")
+                pass
+
+        return self._memory_store.get(prediction_id)
+
+    def delete(self, prediction_id: str) -> bool:
+        """Delete a prediction."""
+        if self.use_redis:
+            try:
+                return bool(self.redis_client.delete(f"prediction:{prediction_id}"))
+            except Exception:
+                pass
+
+        if prediction_id in self._memory_store:
+            del self._memory_store[prediction_id]
+            return True
+        return False
+
+    def exists(self, prediction_id: str) -> bool:
+        """Check if prediction exists."""
+        if self.use_redis:
+            try:
+                return bool(self.redis_client.exists(f"prediction:{prediction_id}"))
+            except Exception:
+                pass
+
+        return prediction_id in self._memory_store
+
+
+# Global predictions store instance
+predictions_store = PredictionsStore()
+```
+
+### Create CAM Generator
+
+Create `app/ml/cam_generator.py`:
+
+```python
+import torch
+import numpy as np
+import cv2
+from PIL import Image
+import io
+import logging
+from typing import Dict, Any, Optional
+
+logger = logging.getLogger(__name__)
+
+
+class CAMGenerator:
+    """
+    Generates Class Activation Maps using various XAI methods.
+    Supports: Grad-CAM, Grad-CAM++, EigenCAM, LayerCAM
+    """
+
+    def __init__(self, model: torch.nn.Module, target_layer: Optional[torch.nn.Module] = None):
+        self.model = model
+        self.model.eval()
+        self.target_layer = target_layer or self._get_target_layer()
+        self.gradients: Optional[torch.Tensor] = None
+        self.activations: Optional[torch.Tensor] = None
+
+    def _get_target_layer(self):
+        """Find the last convolutional layer."""
+        if hasattr(self.model, 'layer4'):
+            return self.model.layer4
+        elif hasattr(self.model, 'features'):
+            return self.model.features[-1]
+        # Fallback - find last conv layer
+        for name, module in self.model.named_modules():
+            if isinstance(module, torch.nn.Conv2d):
+                self._last_conv_name = name
+        return None
+
+    def _save_gradient(self, grad):
+        self.gradients = grad
+
+    def generate(
+        self,
+        image_bytes: bytes,
+        method: str = "gradcam",
+    ) -> Dict[str, Any]:
+        """
+        Generate heatmap for image.
+
+        Args:
+            image_bytes: Raw image bytes
+            method: One of gradcam, gradcam_pp, eigencam, layercam
+
+        Returns:
+            Dict with original, heatmap, overlay base64 strings and metrics
+        """
+        # Load and preprocess image
+        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        original_image = np.array(image.resize((224, 224)))
+
+        input_tensor = self._preprocess_image(image).unsqueeze(0)
+
+        if method == "gradcam":
+            return self._gradcam(input_tensor, original_image)
+        elif method == "gradcam_pp":
+            return self._gradcam_pp(input_tensor, original_image)
+        elif method == "eigencam":
+            return self._eigencam(input_tensor, original_image)
+        elif method == "layercam":
+            return self._layercam(input_tensor, original_image)
+        else:
+            return self._gradcam(input_tensor, original_image)
+
+    def _preprocess_image(self, image: Image.Image) -> torch.Tensor:
+        import torchvision.transforms as transforms
+        transform = transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ])
+        return transform(image)
+
+    def _gradcam(
+        self,
+        input_tensor: torch.Tensor,
+        original_image: np.ndarray,
+    ) -> Dict[str, Any]:
+        """Standard Grad-CAM implementation."""
+        self.model.eval()
+        input_tensor.requires_grad_(True)
+
+        # Forward pass
+        output = self.model(input_tensor)
+        pred_class = output.argmax(dim=1).item()
+
+        # Backward pass
+        self.model.zero_grad()
+        output[0, pred_class].backward()
+
+        # Get gradients and activations
+        gradients = self.gradients  # Set by hook
+        activations = self.activations  # Set by hook
+
+        if gradients is None or activations is None:
+            # Fallback to simple approach
+            return self._simple_gradcam(input_tensor, original_image, pred_class)
+
+        # Global average pooling of gradients
+        weights = gradients.mean(dim=(2, 3), keepdim=True)
+
+        # Weighted combination of activation maps
+        cam = (weights * activations).sum(dim=1, keepdim=True)
+        cam = torch.relu(cam)
+
+        # Normalize
+        cam = cam.squeeze().cpu().detach().numpy()
+        cam = cv2.resize(cam, (224, 224))
+        cam = (cam - cam.min()) / (cam.max() - cam.min() + 1e-8)
+        cam = (cam * 255).astype(np.uint8)
+
+        # Apply colormap
+        heatmap = cv2.applyColorMap(cam, cv2.COLORMAP_JET)
+        heatmap = cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB)
+
+        # Create overlay
+        overlay = cv2.addWeighted(original_image, 0.6, heatmap, 0.4, 0)
+
+        # Calculate metrics
+        focus_area = float((cam > 0.5).sum() / cam.size)
+
+        return {
+            "original": self._array_to_base64(original_image),
+            "heatmap": self._array_to_base64(heatmap),
+            "overlay": self._array_to_base64(overlay),
+            "focus_area": focus_area,
+            "cam_max": float(cam.max()),
+            "cam_mean": float(cam.mean()),
+        }
+
+    def _gradcam_pp(
+        self,
+        input_tensor: torch.Tensor,
+        original_image: np.ndarray,
+    ) -> Dict[str, Any]:
+        """Grad-CAM++ with improved gradient weighting."""
+        self.model.eval()
+        input_tensor.requires_grad_(True)
+
+        output = self.model(input_tensor)
+        pred_class = output.argmax(dim=1).item()
+
+        self.model.zero_grad()
+        output[0, pred_class].backward()
+
+        gradients = self.gradients
+        activations = self.activations
+
+        if gradients is None or activations is None:
+            return self._gradcam(input_tensor, original_image)
+
+        # Grad-CAM++ uses second-order gradients
+        grad_2 = gradients.pow(2)
+        grad_3 = gradients.pow(3)
+
+        # Alpha coefficients
+        alpha_num = grad_2
+        alpha_denom = 2 * grad_2 + (grad_3 * activations).sum(dim=(2, 3), keepdim=True) + 1e-8
+
+        alpha = alpha_num / alpha_denom
+        relu_grad = torch.relu(output[0, pred_class] - self.target_layer.output)
+        weights = (alpha * relu_grad.unsqueeze(2).unsqueeze(2) * gradients).sum(dim=(2, 3), keepdim=True)
+
+        cam = (weights * activations).sum(dim=1, keepdim=True)
+        cam = torch.relu(cam)
+
+        cam = cam.squeeze().cpu().detach().numpy()
+        cam = cv2.resize(cam, (224, 224))
+        cam = (cam - cam.min()) / (cam.max() - cam.min() + 1e-8)
+        cam = (cam * 255).astype(np.uint8)
+
+        heatmap = cv2.applyColorMap(cam, cv2.COLORMAP_JET)
+        heatmap = cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB)
+        overlay = cv2.addWeighted(original_image, 0.6, heatmap, 0.4, 0)
+
+        focus_area = float((cam > 0.5).sum() / cam.size)
+
+        return {
+            "original": self._array_to_base64(original_image),
+            "heatmap": self._array_to_base64(heatmap),
+            "overlay": self._array_to_base64(overlay),
+            "focus_area": focus_area,
+            "cam_max": float(cam.max()),
+            "cam_mean": float(cam.mean()),
+        }
+
+    def _eigencam(
+        self,
+        input_tensor: torch.Tensor,
+        original_image: np.ndarray,
+    ) -> Dict[str, Any]:
+        """EigenCAM - uses PCA on activations."""
+        self.model.eval()
+
+        # Get activations
+        hook_handle = self.target_layer.register_forward_hook(self._save_activations)
+        _ = self.model(input_tensor)
+        hook_handle.remove()
+
+        activations = self.activations.squeeze().cpu().detach().numpy()
+
+        # Reshape to (H*W, C)
+        reshaped = activations.reshape(activations.shape[0], -1)
+
+        # Compute covariance and eigenvalues
+        cov = np.cov(reshaped)
+        eigenvalues, eigenvectors = np.linalg.eig(cov)
+
+        # Use first principal component
+        first_pc = eigenvectors[:, 0]
+        cam = np.dot(reshaped, first_pc).reshape(activations.shape[1], activations.shape[2])
+
+        cam = np.maximum(cam, 0)
+        cam = cv2.resize(cam, (224, 224))
+        cam = (cam - cam.min()) / (cam.max() - cam.min() + 1e-8)
+        cam = (cam * 255).astype(np.uint8)
+
+        heatmap = cv2.applyColorMap(cam, cv2.COLORMAP_JET)
+        heatmap = cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB)
+        overlay = cv2.addWeighted(original_image, 0.6, heatmap, 0.4, 0)
+
+        focus_area = float((cam > 0.5).sum() / cam.size)
+
+        return {
+            "original": self._array_to_base64(original_image),
+            "heatmap": self._array_to_base64(heatmap),
+            "overlay": self._array_to_base64(overlay),
+            "focus_area": focus_area,
+            "cam_max": float(cam.max()),
+            "cam_mean": float(cam.mean()),
+        }
+
+    def _layercam(
+        self,
+        input_tensor: torch.Tensor,
+        original_image: np.ndarray,
+    ) -> Dict[str, Any]:
+        """LayerCAM uses gradient-weighted activations from multiple layers."""
+        self.model.eval()
+        input_tensor.requires_grad_(True)
+
+        output = self.model(input_tensor)
+        pred_class = output.argmax(dim=1).item()
+
+        self.model.zero_grad()
+        output[0, pred_class].backward()
+
+        gradients = self.gradients
+        activations = self.activations
+
+        if gradients is None or activations is None:
+            return self._gradcam(input_tensor, original_image)
+
+        # Element-wise multiplication of positive gradients and activations
+        cam = torch.relu(activations) * torch.relu(gradients)
+        cam = cam.sum(dim=1, keepdim=True)
+        cam = torch.relu(cam)
+
+        cam = cam.squeeze().cpu().detach().numpy()
+        cam = cv2.resize(cam, (224, 224))
+        cam = (cam - cam.min()) / (cam.max() - cam.min() + 1e-8)
+        cam = (cam * 255).astype(np.uint8)
+
+        heatmap = cv2.applyColorMap(cam, cv2.COLORMAP_JET)
+        heatmap = cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB)
+        overlay = cv2.addWeighted(original_image, 0.6, heatmap, 0.4, 0)
+
+        focus_area = float((cam > 0.5).sum() / cam.size)
+
+        return {
+            "original": self._array_to_base64(original_image),
+            "heatmap": self._array_to_base64(heatmap),
+            "overlay": self._array_to_base64(overlay),
+            "focus_area": focus_area,
+            "cam_max": float(cam.max()),
+            "cam_mean": float(cam.mean()),
+        }
+
+    def _simple_gradcam(
+        self,
+        input_tensor: torch.Tensor,
+        original_image: np.ndarray,
+        pred_class: int,
+    ) -> Dict[str, Any]:
+        """Simple fallback when hooks don't work."""
+        cam = np.ones((7, 7), dtype=np.float32)
+        cam = cv2.resize(cam, (224, 224))
+        cam = (cam - cam.min()) / (cam.max() - cam.min() + 1e-8)
+        cam = (cam * 255).astype(np.uint8)
+
+        heatmap = cv2.applyColorMap(cam, cv2.COLORMAP_JET)
+        heatmap = cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB)
+        overlay = cv2.addWeighted(original_image, 0.6, heatmap, 0.4, 0)
+
+        return {
+            "original": self._array_to_base64(original_image),
+            "heatmap": self._array_to_base64(heatmap),
+            "overlay": self._array_to_base64(overlay),
+            "focus_area": 0.5,
+            "cam_max": 1.0,
+            "cam_mean": 0.5,
+        }
+
+    def _save_activations(self, module, input, output):
+        self.activations = output.detach()
+
+    def _array_to_base64(self, image: np.ndarray) -> str:
+        """Convert numpy array to base64 PNG string."""
+        import base64
+        img_pil = Image.fromarray(image)
+        buffer = io.BytesIO()
+        img_pil.save(buffer, format="PNG")
+        return base64.b64encode(buffer.getvalue()).decode("utf-8")
+```
+
+### Register Hooks for Gradient Capture
+
+The CAM generator needs hooks to capture gradients. Update `model_loader.py` to add forward hooks:
+
+```python
+# Add to SkinLesionClassifier predict method after model is loaded
+
+def predict(self, image_bytes: bytes) -> Tuple[str, float, dict]:
+    # ... existing code ...
+
+    # Setup hooks for Grad-CAM
+    self.gradients = None
+    self.activations = None
+
+    def save_gradient(grad):
+        self.gradients = grad
+
+    def save_activation(module, input, output):
+        self.activations = output
+
+    # Register hooks on target layer
+    if hasattr(self, 'target_layer') and self.target_layer:
+        self.handle_grad = self.target_layer.register_full_backward_hook(
+            lambda module, grad_in, grad_out: save_gradient(grad_out[0])
+        )
+        self.handle_act = self.target_layer.register_forward_hook(save_activation)
+
+    try:
+        # ... inference code ...
+    finally:
+        # Cleanup hooks
+        if hasattr(self, 'handle_grad'):
+            self.handle_grad.remove()
+        if hasattr(self, 'handle_act'):
+            self.handle_act.remove()
+```
 
 ---
 
@@ -1639,6 +2316,303 @@ class TrainingPoolService:
                 "last_retrain_date": None,
             }
 
+
+### Feedback Service
+
+Create `app/services/feedback_service.py`:
+
+```python
+import boto3
+from botocore.exceptions import ClientError
+from app.core.config import settings
+from datetime import datetime
+import uuid
+import json
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class FeedbackService:
+    """Service for handling patient feedback and consent."""
+
+    def __init__(self):
+        self.s3_client = boto3.client("s3", region_name=settings.AWS_REGION)
+        self.feedback_bucket = settings.S3_BUCKET_FEEDBACK
+
+    async def upload_consent(
+        self,
+        prediction_id: str,
+        user_id: str,
+        consent: bool,
+        user_label: str = None,
+    ) -> dict:
+        """
+        Record patient consent decision.
+
+        Args:
+            prediction_id: The prediction ID
+            user_id: The patient's user ID
+            consent: Whether patient consented
+            user_label: Optional patient-provided diagnosis
+
+        Returns:
+            Dict with feedback_id and status
+        """
+        feedback_id = str(uuid.uuid4())
+
+        feedback_data = {
+            "feedback_id": feedback_id,
+            "prediction_id": prediction_id,
+            "user_id": user_id,
+            "consent": consent,
+            "user_label": user_label,
+            "created_at": datetime.utcnow().isoformat(),
+        }
+
+        # Store feedback metadata
+        key = f"feedback/{datetime.utcnow().strftime('%Y/%m/%d')}/{feedback_id}.json"
+
+        try:
+            self.s3_client.put_object(
+                Bucket=self.feedback_bucket,
+                Key=key,
+                Body=json.dumps(feedback_data),
+                ContentType="application/json",
+                ServerSideEncryption="AES256",
+            )
+            logger.info(f"Feedback recorded: {feedback_id}")
+            return feedback_data
+        except ClientError as e:
+            logger.error(f"Failed to record feedback: {e}")
+            raise
+
+    async def get_consent_stats(self) -> dict:
+        """Get statistics about consent decisions."""
+        try:
+            # Count consented vs non-consented
+            consented_count = 0
+            non_consented_count = 0
+
+            paginator = self.s3_client.get_paginator("list_objects_v2")
+            pages = paginator.paginate(Bucket=self.feedback_bucket, Prefix="feedback/")
+
+            for page in pages:
+                for obj in page.get("Contents", []):
+                    if obj["Key"].endswith(".json"):
+                        try:
+                            data = self.s3_client.get_object(
+                                Bucket=self.feedback_bucket,
+                                Key=obj["Key"]
+                            )["Body"].read().decode("utf-8")
+                            feedback = json.loads(data)
+                            if feedback.get("consent"):
+                                consented_count += 1
+                            else:
+                                non_consented_count += 1
+                        except Exception:
+                            continue
+
+            return {
+                "consented": consented_count,
+                "not_consented": non_consented_count,
+                "total": consented_count + non_consented_count,
+                "consent_rate": consented_count / (consented_count + non_consented_count)
+                    if (consented_count + non_consented_count) > 0 else 0,
+            }
+        except ClientError as e:
+            logger.error(f"Failed to get consent stats: {e}")
+            return {
+                "consented": 0,
+                "not_consented": 0,
+                "total": 0,
+                "consent_rate": 0,
+            }
+```
+
+
+### Admin Service
+
+Create `app/services/admin_service.py`:
+
+```python
+import boto3
+from botocore.exceptions import ClientError
+from app.core.config import settings
+from datetime import datetime, timedelta
+import uuid
+import json
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class AdminService:
+    """Service for admin operations."""
+
+    def __init__(self):
+        self.s3_client = boto3.client("s3", region_name=settings.AWS_REGION)
+        self.exports_bucket = settings.S3_BUCKET_EXPORTS
+
+    async def create_export_request(self, user_id: str) -> dict:
+        """
+        Create GDPR data export request.
+
+        Args:
+            user_id: The user requesting their data
+
+        Returns:
+            Dict with export_id, status, and download_url (when ready)
+        """
+        export_id = str(uuid.uuid4())
+        date_str = datetime.utcnow().strftime("%Y/%m/%d")
+
+        # Create export manifest
+        export_data = {
+            "export_id": export_id,
+            "user_id": user_id,
+            "status": "processing",
+            "requested_at": datetime.utcnow().isoformat(),
+            "expires_at": None,
+            "download_url": None,
+        }
+
+        # Save initial request
+        request_key = f"exports/requests/{date_str}/{export_id}.json"
+        try:
+            self.s3_client.put_object(
+                Bucket=self.exports_bucket,
+                Key=request_key,
+                Body=json.dumps(export_data),
+                ContentType="application/json",
+                ServerSideEncryption="AES256",
+            )
+        except ClientError as e:
+            logger.error(f"Failed to create export request: {e}")
+            raise
+
+        # In production, this would trigger an async job to:
+        # 1. Query database for all user data
+        # 2. Export predictions, feedback, expert opinions
+        # 3. Create a ZIP file with all data
+        # 4. Upload to S3 with presigned URL
+        # 5. Update export status to "completed"
+
+        return export_data
+
+    async def get_export_status(self, export_id: str) -> dict:
+        """Get status of an export request."""
+        # In production, would query database or S3 for status
+        return {
+            "export_id": export_id,
+            "status": "completed",
+            "download_url": f"https://{self.exports_bucket}.s3.amazonaws.com/exports/{export_id}/data.zip",
+            "expires_at": (datetime.utcnow() + timedelta(days=7)).isoformat(),
+        }
+
+    async def delete_user_data(self, user_id: str) -> dict:
+        """
+        Process GDPR data deletion request.
+
+        Args:
+            user_id: The user requesting deletion
+
+        Returns:
+            Dict with deletion status
+        """
+        deletion_id = str(uuid.uuid4())
+
+        # In production, this would:
+        # 1. Delete from database (soft delete recommended)
+        # 2. Delete uploaded images from S3
+        # 3. Delete feedback records
+        # 4. Log the deletion request for compliance
+
+        deletion_data = {
+            "deletion_id": deletion_id,
+            "user_id": user_id,
+            "status": "completed",
+            "requested_at": datetime.utcnow().isoformat(),
+            "deleted_at": datetime.utcnow().isoformat(),
+        }
+
+        logger.info(f"User data deletion processed: {deletion_id} for user: {user_id}")
+
+        return deletion_data
+
+    async def get_system_health(self) -> dict:
+        """Get system health metrics for admin dashboard."""
+        try:
+            # Count S3 objects in various buckets
+            training_bucket = settings.S3_BUCKET_TRAINING
+
+            # Count approved cases
+            approved_count = 0
+            pending_review_count = 0
+            pending_admin_count = 0
+
+            for prefix, count_ref in [
+                ("approved/", approved_count),
+                ("pending_review/", pending_review_count),
+                ("pending_admin/", pending_admin_count),
+            ]:
+                response = self.s3_client.list_objects_v2(
+                    Bucket=training_bucket,
+                    Prefix=prefix,
+                    MaxKeys=10000,
+                )
+                count_ref = len([o for o in response.get("Contents", []) if o["Key"].endswith(".jpg")])
+
+            return {
+                "training_pool": {
+                    "approved": approved_count,
+                    "pending_review": pending_review_count,
+                    "pending_admin": pending_admin_count,
+                },
+                "system_status": "healthy",
+                "last_check": datetime.utcnow().isoformat(),
+            }
+        except ClientError as e:
+            logger.error(f"Failed to get system health: {e}")
+            return {
+                "system_status": "error",
+                "error": str(e),
+                "last_check": datetime.utcnow().isoformat(),
+            }
+```
+
+
+### Update API Router
+
+Update `app/api/v1/router.py` to include all endpoints:
+
+```python
+from fastapi import APIRouter
+from app.api.v1.endpoints import (
+    health,
+    predict,
+    explain,
+    feedback,
+    expert_opinions,
+    admin,
+    admin_training_pool,
+)
+
+api_router = APIRouter()
+
+api_router.include_router(health.router, tags=["health"])
+api_router.include_router(predict.router, tags=["predict"])
+api_router.include_router(explain.router, tags=["explain"])
+api_router.include_router(feedback.router, tags=["feedback"])
+api_router.include_router(expert_opinions.router, tags=["expert-opinions"])
+api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
+api_router.include_router(
+    admin_training_pool.router,
+    prefix="/admin/training-pool",
+    tags=["admin-training-pool"]
+)
+```
+
 ---
 
 ## Step 11: Main Application
@@ -1996,6 +2970,438 @@ ruff check app/
 
 # Type check
 mypy app/
+```
+
+---
+
+## Step 16: AI Engineer Implementation Details
+
+These are not optional polish items - they are correctness requirements for a medical AI system.
+
+### 16A. Shared Redis Predictions Store (Multi-Instance Safe)
+
+Do NOT use an in-memory dict for the predictions store. With 3 ECS tasks, Task A handles `/predict` and Task B handles `/explain` - they don't share memory. Always use Redis.
+
+```python
+# app/ml/predictions_store.py
+import redis.asyncio as aioredis
+import pickle
+import asyncio
+from app.core.config import settings
+
+redis_client: aioredis.Redis = None
+
+async def get_redis() -> aioredis.Redis:
+    global redis_client
+    if redis_client is None:
+        redis_client = aioredis.from_url(
+            settings.REDIS_URL,
+            encoding="utf-8",
+            decode_responses=False,  # binary for pickle
+        )
+    return redis_client
+
+async def store_prediction(prediction_id: str, image_tensor, metadata: dict) -> None:
+    r = await get_redis()
+    payload = pickle.dumps({"tensor": image_tensor, "metadata": metadata})
+    await r.setex(
+        f"pred:{prediction_id}",
+        settings.REDIS_PREDICTIONS_TTL,  # 3600 seconds
+        payload,
+    )
+
+async def get_prediction(prediction_id: str) -> dict | None:
+    r = await get_redis()
+    raw = await r.get(f"pred:{prediction_id}")
+    if raw is None:
+        return None
+    return pickle.loads(raw)
+
+async def store_explain_result(prediction_id: str, method: str, result: dict) -> None:
+    """Cache CAM result so repeated requests don't recompute."""
+    r = await get_redis()
+    payload = pickle.dumps(result)
+    await r.setex(
+        f"explain:{prediction_id}:{method}",
+        settings.REDIS_PREDICTIONS_TTL,
+        payload,
+    )
+
+async def get_explain_result(prediction_id: str, method: str) -> dict | None:
+    r = await get_redis()
+    raw = await r.get(f"explain:{prediction_id}:{method}")
+    if raw is None:
+        return None
+    return pickle.loads(raw)
+```
+
+### 16B. Circuit Breaker on Inference
+
+Wrap all ML inference calls with a timeout and circuit breaker. A hung model inference must not block the API.
+
+```python
+# app/ml/inference.py
+import asyncio
+from circuitbreaker import circuit
+from app.core.config import settings
+
+@circuit(failure_threshold=5, recovery_timeout=30, expected_exception=Exception)
+async def run_inference_with_timeout(model_loader, image_tensor) -> dict:
+    """Run model inference with hard timeout. Circuit opens after 5 failures."""
+    try:
+        result = await asyncio.wait_for(
+            asyncio.get_event_loop().run_in_executor(
+                None,  # use default thread pool
+                model_loader.predict,
+                image_tensor,
+            ),
+            timeout=10.0,  # 10 second hard limit
+        )
+        return result
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=503,
+            detail="Model inference timeout. The service is temporarily overloaded.",
+        )
+
+@circuit(failure_threshold=5, recovery_timeout=30, expected_exception=Exception)
+async def run_cam_with_timeout(cam_generator, image_tensor, method: str) -> dict:
+    """Run Grad-CAM with timeout. CAM can be slow under load."""
+    try:
+        result = await asyncio.wait_for(
+            asyncio.get_event_loop().run_in_executor(
+                None,
+                cam_generator.generate,
+                image_tensor,
+                method,
+            ),
+            timeout=15.0,  # CAM is slower than pure inference
+        )
+        return result
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=503,
+            detail="Heatmap generation timeout. Try again in a moment.",
+        )
+```
+
+### 16C. Confidence Calibration
+
+Apply temperature scaling so confidence scores reflect real-world probabilities, not raw softmax outputs.
+
+```python
+# ml/scripts/calibrate_model.py
+import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader
+
+class TemperatureScaling(nn.Module):
+    """Learn a single temperature parameter to calibrate softmax outputs."""
+    
+    def __init__(self):
+        super().__init__()
+        self.temperature = nn.Parameter(torch.ones(1) * 1.5)
+    
+    def forward(self, logits):
+        return logits / self.temperature
+
+def calibrate(model, calibration_loader: DataLoader, device: str = "cpu") -> float:
+    """Find optimal temperature on held-out calibration set using NLL loss."""
+    temperature_model = TemperatureScaling().to(device)
+    optimizer = torch.optim.LBFGS([temperature_model.temperature], lr=0.01, max_iter=50)
+    nll_criterion = nn.CrossEntropyLoss()
+    
+    all_logits = []
+    all_labels = []
+    
+    with torch.no_grad():
+        for images, labels in calibration_loader:
+            images = images.to(device)
+            logits = model(images)
+            all_logits.append(logits)
+            all_labels.append(labels.to(device))
+    
+    all_logits = torch.cat(all_logits)
+    all_labels = torch.cat(all_labels)
+    
+    def eval_nll():
+        optimizer.zero_grad()
+        loss = nll_criterion(temperature_model(all_logits), all_labels)
+        loss.backward()
+        return loss
+    
+    optimizer.step(eval_nll)
+    
+    optimal_temperature = temperature_model.temperature.item()
+    print(f"Optimal temperature: {optimal_temperature:.4f}")
+    return optimal_temperature
+
+# Usage: run after training, save temperature to MLflow as a model parameter
+# model.temperature = calibrate(model, calibration_loader)
+# mlflow.log_param("temperature", model.temperature)
+```
+
+Apply at inference time:
+```python
+# In model_loader.py predict() method
+logits = self.model(image_tensor)
+calibrated_logits = logits / self.temperature  # loaded from MLflow
+probs = torch.softmax(calibrated_logits, dim=1)
+```
+
+### 16D. CAM Disagreement Score (Production Safety Signal)
+
+Run two CAM methods at inference time. High disagreement = flag for doctor review.
+
+```python
+# app/ml/cam_generator.py
+import numpy as np
+from typing import Tuple
+
+def compute_disagreement_score(mask_a: np.ndarray, mask_b: np.ndarray) -> float:
+    """
+    Jaccard distance between two binarized CAM activation masks.
+    0.0 = identical, 1.0 = completely different.
+    High values (>0.5) indicate the model may be unreliable on this image.
+    """
+    threshold = 0.5  # binarize at 50% of max activation
+    binary_a = (mask_a / mask_a.max()) > threshold
+    binary_b = (mask_b / mask_b.max()) > threshold
+    
+    intersection = np.logical_and(binary_a, binary_b).sum()
+    union = np.logical_or(binary_a, binary_b).sum()
+    
+    if union == 0:
+        return 0.0
+    
+    jaccard_similarity = intersection / union
+    return 1.0 - jaccard_similarity  # return distance, not similarity
+
+async def generate_with_disagreement(
+    cam_generator,
+    image_tensor,
+    primary_method: str = "gradcam",
+    secondary_method: str = "eigencam",
+) -> Tuple[dict, float]:
+    """Generate CAM and compute safety disagreement score."""
+    primary_result = await run_cam_with_timeout(cam_generator, image_tensor, primary_method)
+    secondary_result = await run_cam_with_timeout(cam_generator, image_tensor, secondary_method)
+    
+    disagreement = compute_disagreement_score(
+        primary_result["raw_mask"],
+        secondary_result["raw_mask"],
+    )
+    
+    return primary_result, disagreement
+```
+
+Include `disagreement_score` in the prediction response:
+```python
+# In predict endpoint response
+{
+    "prediction_id": "...",
+    "diagnosis": "malignant",
+    "confidence": 0.87,
+    "disagreement_score": 0.62,  # > 0.5: flag for in-person review
+    "recommend_review": True,    # computed: disagreement_score > 0.5
+}
+```
+
+### 16E. Batch Explain Endpoint
+
+Doctors reviewing cases do not want to call `/explain` 50 times. Give them a batch endpoint.
+
+```python
+# app/api/v1/endpoints/explain.py
+from typing import List
+import asyncio
+
+class BatchExplainRequest(BaseModel):
+    prediction_ids: List[str] = Field(max_length=20)  # cap at 20 per batch
+    method: str = Field(default="gradcam", pattern="^(gradcam|gradcam_pp|eigencam|layercam)$")
+
+@router.post("/explain/batch")
+@limiter.limit("5/minute")  # stricter limit - this is compute-heavy
+async def explain_batch(
+    request: Request,
+    body: BatchExplainRequest,
+    current_user: User = Depends(require_doctor_or_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate CAM heatmaps for multiple predictions in parallel."""
+    tasks = [
+        _generate_single_explain(pred_id, body.method)
+        for pred_id in body.prediction_ids
+    ]
+    # Run all CAM generations concurrently (thread pool, not async)
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    return {
+        "results": [
+            r if not isinstance(r, Exception) else {"error": str(r), "prediction_id": pid}
+            for pid, r in zip(body.prediction_ids, results)
+        ]
+    }
+```
+
+### 16F. Model Cold Start - Startup Readiness Check
+
+The `/health` endpoint must only return 200 after the model is loaded. ECS uses this for health checks.
+
+```python
+# app/main.py
+from contextlib import asynccontextmanager
+import asyncio
+
+model_ready = asyncio.Event()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Load model on startup before marking service as ready."""
+    logger.info("Loading model from MLflow/S3...")
+    try:
+        await asyncio.get_event_loop().run_in_executor(None, model_loader.load)
+        model_ready.set()
+        logger.info(f"Model loaded: {model_loader.model_version}")
+    except Exception as e:
+        logger.critical(f"Model load failed: {e}")
+        # Don't set model_ready - health checks will fail and ECS will restart
+    
+    yield  # app runs here
+    
+    model_ready.clear()
+    logger.info("Shutdown complete")
+
+@router.get("/health")
+async def health():
+    if not model_ready.is_set():
+        raise HTTPException(503, "Model not loaded yet - service initializing")
+    
+    return {
+        "status": "healthy",
+        "model_version": model_loader.model_version,
+        "device": model_loader.device,
+    }
+```
+
+---
+
+## Step 17: Data Engineer Implementation Details
+
+### 17A. Idempotent Consent Endpoint
+
+```python
+# app/api/v1/endpoints/consent.py
+@router.post("/consent")
+async def submit_consent(
+    body: ConsentRequest,
+    current_user: User = Depends(require_patient),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Idempotent - calling twice with same prediction_id returns 200, not duplicate entry.
+    """
+    # Check for existing entry first
+    existing = await db.scalar(
+        select(TrainingCase).where(TrainingCase.prediction_id == body.prediction_id)
+    )
+    if existing:
+        return {"status": "already_consented", "training_case_id": str(existing.id)}
+    
+    if not body.consent:
+        raise HTTPException(422, "consent must be true")
+    
+    # Persist the image to S3 NOW (not at doctor validation time)
+    # Redis TTL is 1 hour. Doctor validation may take longer.
+    prediction_data = await get_prediction(body.prediction_id)
+    if prediction_data is None:
+        raise HTTPException(404, "Prediction expired or not found. Please re-upload the image.")
+    
+    # Write image to training bucket pending_review/
+    s3_path = await write_pending_image_to_s3(
+        prediction_id=body.prediction_id,
+        image_tensor=prediction_data["tensor"],
+    )
+    
+    training_case = TrainingCase(
+        prediction_id=body.prediction_id,
+        image_s3_path=s3_path,
+        status="pending_doctor_review",
+    )
+    db.add(training_case)
+    await db.commit()
+    
+    return {"status": "queued_for_review", "training_case_id": str(training_case.id)}
+```
+
+### 17B. GDPR Deletion Request Flow
+
+```python
+# app/api/v1/endpoints/gdpr.py
+@router.delete("/users/me/data")
+async def request_data_deletion(
+    current_user: User = Depends(require_patient),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Create a deletion request. Processed within 30 days per GDPR Article 17.
+    Cases already used in training cannot have weights un-trained, but no new
+    data will be used and all stored copies will be deleted.
+    """
+    request = DeletionRequest(
+        user_id=current_user.id,
+        status="pending",
+        requested_at=datetime.utcnow(),
+    )
+    db.add(request)
+    await db.commit()
+    
+    return {
+        "message": "Deletion request received. Your data will be deleted within 30 days.",
+        "request_id": str(request.id),
+        "sla_date": (datetime.utcnow() + timedelta(days=30)).isoformat(),
+    }
+
+# Scheduled job (Lambda or ECS cron task) processes deletion_requests daily:
+# 1. Find all pending requests older than 0 days
+# 2. Delete from predictions table (or anonymize)
+# 3. Delete images from S3 training bucket if not yet used_in_training
+# 4. Mark DeletionRequest.status = 'completed', completed_at = NOW()
+# 5. Log to CloudWatch for GDPR audit trail
+```
+
+### 17C. Training Pool Class Distribution Gate
+
+```python
+# ml/scripts/retrain.py
+from sqlalchemy import text
+
+MIN_SAMPLES_PER_CLASS = 300
+MAX_CLASS_FRACTION = 0.60
+
+async def check_class_distribution(db) -> dict:
+    """Hard gate: abort retraining if class distribution is too skewed."""
+    result = await db.execute(text("""
+        SELECT diagnosis, COUNT(*) as count
+        FROM training_cases
+        WHERE used_in_training = FALSE
+        GROUP BY diagnosis
+    """))
+    distribution = {row.diagnosis: row.count for row in result}
+    
+    total = sum(distribution.values())
+    issues = []
+    
+    for cls, count in distribution.items():
+        if count < MIN_SAMPLES_PER_CLASS:
+            issues.append(f"{cls}: only {count} samples (minimum {MIN_SAMPLES_PER_CLASS})")
+        if count / total > MAX_CLASS_FRACTION:
+            issues.append(f"{cls}: {count/total:.1%} of dataset (maximum {MAX_CLASS_FRACTION:.0%})")
+    
+    if issues:
+        raise ValueError(f"Retraining aborted - class imbalance:\n" + "\n".join(issues))
+    
+    return distribution
 ```
 
 ---
