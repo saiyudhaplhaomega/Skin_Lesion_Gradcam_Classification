@@ -57,6 +57,7 @@ data/
 # Local sensitive files
 *.local
 .env.production
+AGENTS.md
 
 # Graphify knowledge graph outputs
 graphify-out/
