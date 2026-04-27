@@ -4,12 +4,12 @@ Workspace-level architecture, infrastructure, and build guidance for the Skin Le
 
 The implementation is split across separate repositories so each repo has a clear job:
 
-| Repository | Purpose | GitHub |
-| --- | --- | --- |
-| [`Skin_Lesion_Classification_backend`](https://github.com/saiyudhaplhaomega/Skin_Lesion_Classification_backend) | FastAPI inference API, PyTorch model serving, Grad-CAM generation, and backend-owned model artifact loading | https://github.com/saiyudhaplhaomega/Skin_Lesion_Classification_backend |
-| [`Skin_Lesion_Classification_frontend`](https://github.com/saiyudhaplhaomega/Skin_Lesion_Classification_frontend) | Next.js web app for patient uploads, prediction display, heatmap viewing, consent, doctor review, and admin workflows | https://github.com/saiyudhaplhaomega/Skin_Lesion_Classification_frontend |
-| [`Skin_Lesion_XAI_research`](https://github.com/saiyudhaplhaomega/Skin_Lesion_XAI_research) | HAM10000 notebooks, RQ1-RQ6 experiments, research metrics, figures, and training helpers | https://github.com/saiyudhaplhaomega/Skin_Lesion_XAI_research |
-| `Skin_Lesion_GRADCAM_Classification` | This workspace: architecture docs, Terraform infrastructure, build roadmap, security docs, and cross-repo coordination | local/root repo |
+| Repository | Purpose |
+| --- | --- |
+| [`Skin_Lesion_Classification_backend`](https://github.com/saiyudhaplhaomega/Skin_Lesion_Classification_backend) | FastAPI inference API, PyTorch model serving, Grad-CAM generation, and backend-owned model artifact loading |
+| [`Skin_Lesion_Classification_frontend`](https://github.com/saiyudhaplhaomega/Skin_Lesion_Classification_frontend) | Next.js web app for patient uploads, prediction display, heatmap viewing, consent, doctor review, and admin workflows |
+| [`Skin_Lesion_XAI_research`](https://github.com/saiyudhaplhaomega/Skin_Lesion_XAI_research) | HAM10000 notebooks, RQ1-RQ6 experiments, research metrics, figures, and training helpers |
+| `Skin_Lesion_GRADCAM_Classification` | This workspace: architecture docs, Terraform infrastructure, build roadmap, security docs, and cross-repo coordination |
 
 ## Current Build Reality
 
