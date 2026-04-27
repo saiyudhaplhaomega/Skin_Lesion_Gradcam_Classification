@@ -65,12 +65,30 @@ This checklist provides a sequential, step-by-step guide through all 5 developme
 mkdir -p ~/projects/skin_lesion
 cd ~/projects/skin_lesion
 
-# Clone main monorepo
+# Clone root architecture/infrastructure repo
 git clone https://github.com/saiyudhaplhaomega/Skin_Lesion_Gradcam_Classification.git
 cd Skin_Lesion_Gradcam_Classification
 
-# Note: Backend and frontend are separate git repos within this structure
+# Backend, frontend, and research are separate repos.
+# Clone or place them as sibling directories inside this folder:
+#   Skin_Lesion_Classification_backend/
+#   Skin_Lesion_Classification_frontend/
+#   Skin_Lesion_XAI_research/
 ```
+
+---
+
+## Phase 0: Reality Check and Learning Plan
+
+Complete this before applying Terraform or building dashboards.
+
+- [ ] Read `docs/PRODUCTION_BUILD_REVIEW.md`.
+- [ ] Confirm backend FastAPI app does not exist yet and must be built from scratch.
+- [ ] Confirm frontend is a scaffold and the patient upload flow is the first UI target.
+- [ ] Confirm mobile app is future work after the backend/web API stabilizes.
+- [ ] Confirm CI/CD workflows do not exist yet and CI should be built before deploy workflows.
+- [ ] Decide whether first backend `/predict` uses a mock model response or real local checkpoint. Recommended: mock first, then real model.
+- [ ] Write down your first vertical slice: upload image -> backend validates -> mocked prediction -> frontend displays result.
 
 ---
 

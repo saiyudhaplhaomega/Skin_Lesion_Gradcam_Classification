@@ -4,6 +4,24 @@
 
 ---
 
+## Current Repo State
+
+No GitHub Actions workflows are currently implemented. Start with CI only, then add deployment.
+
+Build in this order:
+
+1. Backend CI: lint, tests, type check.
+2. Frontend CI: install, type check, build.
+3. Terraform CI: fmt, validate, plan.
+4. Docker build and container scan.
+5. Staging deploy.
+6. Production deploy with manual approval.
+7. Model training and promotion workflows.
+
+Do not start with production deployment workflows before the app has tests and Docker images.
+
+---
+
 ## Overview
 
 A production CI/CD pipeline ensures:
@@ -41,6 +59,25 @@ A production CI/CD pipeline ensures:
 │                    └─────────────┘    └─────────────┘                    │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## Security Baseline For Workflows
+
+Prefer GitHub OIDC for AWS access instead of long-lived `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`.
+
+Minimum workflow security checks:
+
+- dependency scan (`pip-audit`, `npm audit`, or Dependabot)
+- secret scanning
+- container scan (`trivy`)
+- Terraform `fmt` and `validate`
+- Terraform plan artifact for review
+- backend tests before Docker publish
+- frontend build before Vercel deploy
+- manual approval for production
+
+Add SBOM generation later with `syft` once Docker images exist.
 
 ---
 

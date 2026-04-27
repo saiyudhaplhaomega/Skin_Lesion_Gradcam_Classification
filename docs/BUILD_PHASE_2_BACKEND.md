@@ -51,6 +51,32 @@ The backend is the core of our application. It handles:
 
 ---
 
+## Current Repo State
+
+The backend repository currently has ML helper code under `ml/src/`, but the production FastAPI app does not exist yet. Build the backend in vertical slices:
+
+1. `GET /health` with no database.
+2. `POST /api/v1/predict` with a mocked prediction response.
+3. File validation and tests.
+4. Real model loading from local checkpoint.
+5. Redis-backed prediction cache.
+6. `POST /api/v1/explain`.
+7. Database, consent, doctor review, and admin flows.
+
+This order lets you learn each layer without debugging AWS, auth, database, Redis, Grad-CAM, and Docker all at once.
+
+### Snippet Accuracy Note
+
+Some snippets below are learning scaffolds. Before copying them into production code:
+
+- Match dependency versions to `Skin_Lesion_Classification_backend/requirements.txt`.
+- Prefer `opencv-python-headless` in backend Docker images.
+- Do not store raw images or tensors in Redis with `pickle` for production. Store images in S3 and keep only IDs/metadata/cache results in Redis.
+- Add `pydantic-settings`, `sqlalchemy`, `asyncpg`, `alembic`, `redis`, `python-jose`, and `httpx` when you reach the steps that need them.
+- Put `pytest`, `ruff`, and `mypy` in `requirements-dev.txt`, not the production Docker image.
+
+---
+
 ## Step 1: Project Structure
 
 ### Create the Directory Structure
@@ -99,7 +125,7 @@ app/
 
 ## Step 2: Requirements.txt
 
-Create `requirements.txt`:
+The backend repo already has `requirements.txt`. Treat the repo file as the source of truth. The example below is a production baseline that matches the current project direction more closely than older snippets:
 
 ```txt
 # Web Framework

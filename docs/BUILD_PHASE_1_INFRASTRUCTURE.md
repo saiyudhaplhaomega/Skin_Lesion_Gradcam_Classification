@@ -39,6 +39,33 @@ Work through these before running `make apply`. Infrastructure mistakes are expe
 | `cloudwatch-alarms/` | Missing | High | Alert on inference error rate, latency P99, model drift |
 | `ecs-service/` | Partial | High | ECS service definition (separate from ECS cluster) - health check grace period |
 | `ecr/` | Missing | High | Container image registry for backend Docker images |
+| `route53-acm/` | Missing | High | HTTPS custom domain and certificate management |
+| `vpc-endpoints/` | Partial | High | Private access to ECR API, ECR Docker, CloudWatch Logs, STS, Secrets Manager |
+| `terraform-backend/` | Missing | High | Remote state bucket and DynamoDB lock table for safe team usage |
+
+### Build These Modules Before Applying Production
+
+For learning, create modules in this order:
+
+1. `ecr/` - needed before any ECS deployment can pull backend images.
+2. `elasticache/` - needed before `/predict` and `/explain` run on more than one ECS task.
+3. `sqs/` - needed before consent, doctor review, and admin approval pipeline work.
+4. `cloudwatch-alarms/` - needed before traffic.
+5. `route53-acm/` - needed before public HTTPS.
+6. `mlflow/` - needed before model registry and promotion.
+
+Do not wire these all at once. Add one module, run `terraform fmt`, `terraform validate`, `terraform plan`, then commit.
+
+### VPC/Security Wiring Corrections To Check
+
+The current VPC direction is good, but verify these before production:
+
+- App subnets should route egress through NAT, but data subnets should not have broad internet egress unless a specific reason exists.
+- Use one source of truth for the ECS service security group. RDS should allow inbound only from the actual ECS service SG, not a duplicate SG created inside the RDS module.
+- ALB should redirect HTTP 80 to HTTPS 443 after ACM is configured.
+- WAF must be explicitly associated with the ALB ARN.
+- ECS service must use `assign_public_ip = false` and app subnet IDs.
+- Add interface endpoints for ECR API, ECR Docker, CloudWatch Logs, STS, and Secrets Manager if you want private image pulls and private secret access.
 
 ---
 

@@ -10,6 +10,24 @@ This checklist ensures all security controls are properly configured before goin
 
 ---
 
+## 0. Production Security Additions
+
+These items are required before a medical-image application is exposed to real users:
+
+- [ ] Threat model written for patient upload, doctor review, admin approval, and model promotion flows.
+- [ ] Uploaded images are scanned for malware before any downstream processing.
+- [ ] EXIF metadata is stripped before images are stored or displayed.
+- [ ] Strict CORS origins are configured per environment.
+- [ ] Every request has a request ID in logs and responses.
+- [ ] Audit logs exist for login, prediction, consent, doctor review, admin approval, model promotion, export, and deletion.
+- [ ] Container images are scanned before deployment.
+- [ ] Dependency scanning runs in CI.
+- [ ] Secret scanning runs in CI.
+- [ ] Production secrets are stored in Secrets Manager or Vercel/Expo secret stores, never in GitHub repo files.
+- [ ] Public patient UI includes clear safety language: this is not a diagnosis and urgent concerns require a clinician.
+
+---
+
 ## 1. Authentication & Authorization
 
 ### AWS Cognito

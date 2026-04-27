@@ -4,6 +4,21 @@
 
 ---
 
+## Current Repo State
+
+No native mobile app exists yet. Treat this guide as a future phase, not current implementation.
+
+Build mobile after:
+
+1. Backend `/predict`, `/explain`, auth, and consent endpoints are stable.
+2. The web frontend proves the patient upload flow.
+3. API response types are versioned and documented.
+4. Image upload size limits and compression rules are known.
+
+If you want mobile coverage earlier, build the web app as a PWA first. Native Expo should come after the API contract stops changing daily.
+
+---
+
 ## Overview
 
 The mobile app allows users to access the platform on the go. We need:
@@ -33,9 +48,6 @@ Expo is a framework built on top of React Native that makes development easier:
 ## Step 1: Initialize Expo Project
 
 ```bash
-# Install Expo CLI globally (if not installed)
-npm install -g expo-cli
-
 # Create new Expo project
 cd C:/Users/saiyu/Desktop/projects/KI_projects/Skin_Lesion_GRADCAM_Classification
 
@@ -58,6 +70,8 @@ npx expo install react-native-svg   # For heatmap visualization
 npx expo install date-fns           # For date formatting
 npx expo install react-native-paper  # Material Design components
 ```
+
+Do not install the old global `expo-cli`; use `npx expo ...` and EAS CLI when needed. The global CLI is deprecated for modern Expo SDKs.
 
 ### Install Apple Developer Account (for iOS)
 

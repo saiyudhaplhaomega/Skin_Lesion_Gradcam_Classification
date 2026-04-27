@@ -12,6 +12,7 @@ Every doc has a job. Here is what to use each one for:
 |-----|----------------|--------------|
 | **This file** | Always | Navigation map - tells you where to go |
 | `ARCHITECTURE.md` | Before each phase, and when confused about design | Full system design + Section 15 has 28 critical questions organized by engineer type |
+| `SYSTEM_DESIGN_LEARNING_GUIDE.md` | When learning architecture decisions | Q&A for why each major choice was made and what alternatives were rejected |
 | `BUILD_PHASE_1_INFRASTRUCTURE.md` | Phase 1 only | Terraform setup, module-by-module guide |
 | `BUILD_PHASE_2_BACKEND.md` | Phase 2 only | FastAPI implementation, all steps + AI/Data engineer patterns |
 | `BUILD_PHASE_3_FRONTEND.md` | Phase 3 only | Next.js implementation, role-specific UI specs |
@@ -22,6 +23,24 @@ Every doc has a job. Here is what to use each one for:
 | `TROUBLESHOOTING.md` | When something breaks | Error lookup table |
 | `ROLLBACK_PROCEDURES.md` | When you need to undo a deployment | Step-by-step rollback for each component |
 | `GDPR_COMPLIANCE.md` | Phase 2 consent endpoint, and pre-launch | Data handling rules you must follow |
+| `PRODUCTION_BUILD_REVIEW.md` | Before planning each sprint | Current implementation gaps, corrected build order, and snippet quality notes |
+
+---
+
+## Current Repo Reality
+
+Before building, separate what exists from what is still planned:
+
+| Area | Current state | Next learning target |
+|------|---------------|----------------------|
+| Backend | ML utilities exist, but the FastAPI app is not implemented | Build a minimal `GET /health` and `POST /predict` first |
+| Frontend | Next.js scaffold exists | Build the patient upload and prediction flow before dashboards |
+| Research | RQ notebooks and outputs live in `Skin_Lesion_XAI_research` | Keep research notebooks out of the frontend app |
+| Infrastructure | Foundation Terraform modules exist | Add missing runtime modules before production deploy |
+| Mobile | No Expo app yet | Build mobile after the web API contract is stable |
+| CI/CD | Docs exist, workflows do not | Add CI checks before deployment workflows |
+
+Open `docs/PRODUCTION_BUILD_REVIEW.md` before starting a phase. It lists what is implemented, what is missing, and which guide snippets need extra care.
 
 ---
 

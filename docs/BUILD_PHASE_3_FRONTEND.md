@@ -41,6 +41,36 @@ The web frontend provides role-specific interfaces for three user types:
 
 ---
 
+## Current Repo State
+
+`Skin_Lesion_Classification_frontend` is currently a clean Next.js scaffold. It is not yet the full app described in this guide.
+
+Build the frontend in this learning order:
+
+1. Make the scaffold build cleanly.
+2. Add shared API types and `lib/api.ts`.
+3. Build the patient upload/predict flow with a mocked backend response.
+4. Connect to the real backend `/predict`.
+5. Add the heatmap viewer and `/explain`.
+6. Add auth and role routing.
+7. Add doctor and admin dashboards.
+8. Add PWA/mobile-web polish.
+
+Do not start with all dashboards at once. The patient upload flow is the smallest useful product slice.
+
+### Mobile-Web/PWA Requirements
+
+The web app should be usable on mobile browsers before a native app exists. Add these before launch:
+
+- responsive upload flow tested on iOS Safari and Android Chrome
+- image compression before upload
+- loading and retry states for slow networks
+- PWA manifest and icons
+- accessible buttons, form labels, focus states, and keyboard navigation
+- no raw confidence decimals shown to patients
+
+---
+
 ## Step 1: Create Next.js Project
 
 ```bash
@@ -66,6 +96,17 @@ npx create-next-app@latest . \
 ```
 
 ### Install Additional Dependencies
+
+If the scaffold already exists, do not rerun `create-next-app`. First verify the scaffold:
+
+```bash
+cd Skin_Lesion_Classification_frontend
+npm install
+npm run type-check
+npm run build
+```
+
+Then install feature dependencies only when you reach the step that uses them. The current scaffold only has `next`, `react`, `react-dom`, and TypeScript.
 
 ```bash
 npm install @aws-amplify/ui-react \
