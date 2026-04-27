@@ -4,8 +4,9 @@ Run all cells from 00_setup_and_sanity.ipynb programmatically.
 import os, sys
 from pathlib import Path
 
-NOTEBOOK_DIR = Path(r"C:\Users\saiyu\Desktop\projects\KI_projects\Skin_Lesion_GRADCAM_Classification\Skin_Lesion_Classification_frontend\notebooks")
-BACKEND_DIR = NOTEBOOK_DIR.parent.parent / "Skin_Lesion_Classification_backend"
+ROOT_DIR = Path(__file__).resolve().parent
+NOTEBOOK_DIR = ROOT_DIR / "Skin_Lesion_XAI_research" / "notebooks"
+BACKEND_DIR = Path(os.environ.get("SKIN_LESION_BACKEND_DIR", ROOT_DIR / "Skin_Lesion_Classification_backend"))
 ML_DIR = BACKEND_DIR / "ml"
 
 sys.path.insert(0, str(ML_DIR))
@@ -127,7 +128,7 @@ test_loader  = DataLoader(test_ds,  batch_size=BATCH_SIZE, shuffle=False, num_wo
 
 print(f"DataLoaders ready. Train batches: {len(train_loader)}")
 
-DEVICE = torch.device('cuda')
+DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model = timm.create_model('resnet50', pretrained=True, num_classes=1)
 model = model.to(DEVICE)
 
@@ -139,7 +140,8 @@ scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=10)
 print(f"Model: ResNet50 (pretrained)")
 print(f"Loss: BCEWithLogitsLoss (pos_weight={pos_weight.item():.2f})")
 print(f"Optimizer: AdamW (lr=1e-4, weight_decay=1e-5)")
-print(f"Device: {DEVICE} - {torch.cuda.get_device_name(0)}")
+device_name = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"
+print(f"Device: {DEVICE} - {device_name}")
 
 # Cell 8: Training loop
 print("\n" + "=" * 50)
