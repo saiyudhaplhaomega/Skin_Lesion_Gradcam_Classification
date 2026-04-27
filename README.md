@@ -1,102 +1,68 @@
 # Skin Lesion Classification Platform
 
-Medical imaging AI platform that classifies dermoscopy images as benign or malignant and generates explainable heatmaps using Grad-CAM variants.
+Workspace-level architecture, infrastructure, and build guidance for the Skin Lesion Classification platform.
 
-## Architecture
+The implementation is split across separate repositories so each repo has a clear job:
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Monorepo (this repo)                        │
-│  ├── infra/terraform/          ← AWS infrastructure as code    │
-│  ├── ARCHITECTURE.md           ← System design + data flow     │
-│  └── BUILD_PHASE_*.md          ← Implementation phases 1-5     │
-└─────────────────────────────────────────────────────────────────┘
-         │                                    │
-         ▼                                    ▼
-┌──────────────────────────┐       ┌──────────────────────────────┐
-│  skin-lesion-backend     │       │  skin-lesion-frontend        │
-│  (FastAPI + PyTorch)     │       │  (Next.js 14)               │
-│  Deploys to AWS ECS       │       │  Deploys to Vercel          │
-└──────────────────────────┘       └──────────────────────────────┘
-```
+| Repository | Purpose | GitHub |
+| --- | --- | --- |
+| [`Skin_Lesion_Classification_backend`](https://github.com/saiyudhaplhaomega/Skin_Lesion_Classification_backend) | FastAPI inference API, PyTorch model serving, Grad-CAM generation, and backend-owned model artifact loading | https://github.com/saiyudhaplhaomega/Skin_Lesion_Classification_backend |
+| [`Skin_Lesion_Classification_frontend`](https://github.com/saiyudhaplhaomega/Skin_Lesion_Classification_frontend) | Next.js web app for patient uploads, prediction display, heatmap viewing, consent, doctor review, and admin workflows | https://github.com/saiyudhaplhaomega/Skin_Lesion_Classification_frontend |
+| [`Skin_Lesion_XAI_research`](https://github.com/saiyudhaplhaomega/Skin_Lesion_XAI_research) | HAM10000 notebooks, RQ1-RQ6 experiments, research metrics, figures, and training helpers | https://github.com/saiyudhaplhaomega/Skin_Lesion_XAI_research |
+| `Skin_Lesion_GRADCAM_Classification` | This workspace: architecture docs, Terraform infrastructure, build roadmap, security docs, and cross-repo coordination | local/root repo |
 
-## Repositories
+## Current Build Reality
 
-| Repository | Purpose | Deploy |
-|------------|---------|--------|
-| [skin-lesion-backend](https://github.com/saiyudhaplhaomega/Skin_Lesion_Classification_backend) | FastAPI inference API + PyTorch ML | AWS ECS Fargate |
-| [skin-lesion-frontend](https://github.com/saiyudhaplhaomega/Skin_Lesion_Classification_frontend) | Next.js web app | Vercel |
-| skin-lesion-xai-research | RQ1-RQ6 notebooks, metrics, figures, and research training scripts | Local/Jupyter |
+- Research notebooks and experiment outputs belong in `Skin_Lesion_XAI_research`.
+- The frontend should not be the source of truth for notebooks, training scripts, or research outputs.
+- The backend consumes model artifacts and exposes API endpoints; it should not document RQ notebooks as backend-owned work.
+- The root docs describe the full system and build order.
 
-## Infrastructure
+## Build Order
 
-All AWS infrastructure is defined as Terraform in `infra/terraform/`:
+1. Research: prepare data, run notebooks/training, produce candidate model artifacts.
+2. Backend: load model artifacts, expose `/health`, `/predict`, and `/explain`, then add consent/retraining flows.
+3. Frontend: connect the upload, prediction, explanation, consent, doctor, and admin workflows to the backend API.
+4. Infrastructure: deploy AWS services, storage, networking, security controls, and CI/CD when the app contract is stable.
 
-| Module | Purpose |
-|--------|---------|
-| `modules/vpc/` | 3-tier VPC (public/app/data subnets) + S3 VPC endpoint |
-| `modules/cognito/` | User pools for patients and doctors with MFA |
-| `modules/s3-training/` | Training data bucket with MFA delete + VPC-only access |
-| `modules/ecs-task-role/` | Least-privilege IAM for ECS tasks |
-| `modules/rds/` | PostgreSQL with KMS encryption + Multi-AZ |
-| `modules/guardduty/` | Threat detection with SNS alerts |
-| `modules/cloudtrail/` | Multi-region audit logging |
-| `modules/waf/` | Rate limiting + OWASP protection |
-| `modules/alb/` | Application Load Balancer |
-| `modules/ecs/` | ECS Cluster with Container Insights |
+Start with [`docs/HOW_TO_BUILD.md`](docs/HOW_TO_BUILD.md) for the complete phase-by-phase navigation guide.
 
-See `BUILD_PHASE_1_INFRASTRUCTURE.md` for full details.
-
-## Development
+## Local Development
 
 ```bash
-# Infrastructure
-cd infra/terraform
-make init      # Initialize Terraform
-make plan      # Preview changes
-make apply     # Deploy to AWS
-
-# Frontend
-cd Skin_Lesion_Classification_frontend
-npm install
-npm run dev
-
-# Research notebooks
+# Research notebooks and training helpers
 cd Skin_Lesion_XAI_research
 make setup
+make register-kernel
 make run-notebook
 
-# Backend
-cd Skin_Lesion_Classification_backend
-pip install -r requirements.txt
-uvicorn app.main:app --reload
+# Backend API
+cd ../Skin_Lesion_Classification_backend
+make setup
+make run
+
+# Frontend app
+cd ../Skin_Lesion_Classification_frontend
+npm install
+npm run dev
 ```
 
-## Security
-
-Defensive controls implemented across three tiers:
-
-- **Tier 1 (Critical)**: VPC, Cognito MFA, S3 VPC endpoint restriction + MFA delete, GuardDuty
-- **Tier 2 (High)**: ECS least-privilege IAM, RDS encryption, CloudTrail multi-region, VPC Flow Logs
-- **Tier 3 (Medium)**: WAF rate limiting, Secrets Manager rotation, KMS encryption
-
-See `GDPR_COMPLIANCE.md` for data handling requirements.
-
-## Documentation
-
-**Start here when building:** [`docs/HOW_TO_BUILD.md`](docs/HOW_TO_BUILD.md) - navigation map for the entire build, phase by phase.
+## Documentation Map
 
 | Doc | Purpose |
-|-----|---------|
-| [`docs/HOW_TO_BUILD.md`](docs/HOW_TO_BUILD.md) | Build navigation guide - where to go at each stage |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | System design, data flow, and 28 critical engineering questions |
+| --- | --- |
+| [`docs/HOW_TO_BUILD.md`](docs/HOW_TO_BUILD.md) | Build navigation guide and current repo boundaries |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | System design, data flow, and engineering decision questions |
 | [`docs/BUILD_PHASE_1_INFRASTRUCTURE.md`](docs/BUILD_PHASE_1_INFRASTRUCTURE.md) | Terraform infrastructure setup |
-| [`docs/BUILD_PHASE_2_BACKEND.md`](docs/BUILD_PHASE_2_BACKEND.md) | FastAPI implementation + AI/Data engineer patterns |
-| [`docs/BUILD_PHASE_3_FRONTEND.md`](docs/BUILD_PHASE_3_FRONTEND.md) | Next.js per-role UI implementation |
-| [`docs/BUILD_PHASE_4_MOBILE.md`](docs/BUILD_PHASE_4_MOBILE.md) | React Native / Expo mobile app |
-| [`docs/BUILD_PHASE_5_CICD.md`](docs/BUILD_PHASE_5_CICD.md) | CI/CD, MLflow, and deployment |
-| [`docs/DEVELOPMENT_CHECKLIST.md`](docs/DEVELOPMENT_CHECKLIST.md) | Live task tracker - check boxes as you build |
-| [`docs/SECURITY_CHECKLIST.md`](docs/SECURITY_CHECKLIST.md) | Security sign-off before launch |
-| [`docs/GDPR_COMPLIANCE.md`](docs/GDPR_COMPLIANCE.md) | Consent management and data retention |
-| [`docs/ROLLBACK_PROCEDURES.md`](docs/ROLLBACK_PROCEDURES.md) | How to undo deployments |
+| [`docs/BUILD_PHASE_2_BACKEND.md`](docs/BUILD_PHASE_2_BACKEND.md) | Production backend sequence and backend engineering patterns |
+| [`docs/BUILD_PHASE_3_FRONTEND.md`](docs/BUILD_PHASE_3_FRONTEND.md) | Next.js web app implementation plan |
+| [`docs/BUILD_PHASE_4_MOBILE.md`](docs/BUILD_PHASE_4_MOBILE.md) | React Native / Expo mobile plan |
+| [`docs/BUILD_PHASE_5_CICD.md`](docs/BUILD_PHASE_5_CICD.md) | CI/CD, MLflow, and deployment plan |
+| [`docs/PRODUCTION_BUILD_REVIEW.md`](docs/PRODUCTION_BUILD_REVIEW.md) | Current implementation gaps and corrected build order |
+| [`docs/SECURITY_CHECKLIST.md`](docs/SECURITY_CHECKLIST.md) | Pre-launch security checklist |
+| [`docs/GDPR_COMPLIANCE.md`](docs/GDPR_COMPLIANCE.md) | Consent, retention, deletion, and privacy requirements |
 | [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) | Error lookup and fixes |
+
+## Security Notes
+
+Do not commit datasets, patient images, `.env` files, local virtual environments, generated caches, or large model checkpoints unless a repo intentionally tracks them. Research outputs should be reviewed before publishing because figures and CSVs can reveal dataset or experiment details.
