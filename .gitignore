@@ -29,6 +29,7 @@ npm-debug.log*
 # Frontend/Backend - these are separate git repos
 Skin_Lesion_Classification_backend/
 Skin_Lesion_Classification_frontend/
+Skin_Lesion_XAI_research/
 .vscode/
 .idea/
 *.swp

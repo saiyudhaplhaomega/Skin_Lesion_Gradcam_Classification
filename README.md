@@ -26,6 +26,7 @@ Medical imaging AI platform that classifies dermoscopy images as benign or malig
 |------------|---------|--------|
 | [skin-lesion-backend](https://github.com/saiyudhaplhaomega/Skin_Lesion_Classification_backend) | FastAPI inference API + PyTorch ML | AWS ECS Fargate |
 | [skin-lesion-frontend](https://github.com/saiyudhaplhaomega/Skin_Lesion_Classification_frontend) | Next.js web app | Vercel |
+| skin-lesion-xai-research | RQ1-RQ6 notebooks, metrics, figures, and research training scripts | Local/Jupyter |
 
 ## Infrastructure
 
@@ -56,12 +57,17 @@ make plan      # Preview changes
 make apply     # Deploy to AWS
 
 # Frontend
-cd skin-lesion-frontend
+cd Skin_Lesion_Classification_frontend
 npm install
 npm run dev
 
+# Research notebooks
+cd Skin_Lesion_XAI_research
+make setup
+make run-notebook
+
 # Backend
-cd skin-lesion-backend
+cd Skin_Lesion_Classification_backend
 pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
