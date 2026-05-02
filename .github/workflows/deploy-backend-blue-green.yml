@@ -25,7 +25,7 @@ env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: skin-lesion-backend
   ECS_CLUSTER: skin-lesion-${{ inputs.deploy_env || 'staging' }}
-  BACKEND_DIR: backend
+  BACKEND_DIR: Skin_Lesion_Classification_backend
 
 jobs:
   # ============ Phase 1: Build Docker Image ============
