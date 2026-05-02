@@ -7,7 +7,7 @@ The implementation is split across separate repositories so each repo has a clea
 | Repository | Purpose |
 | --- | --- |
 | [`Skin_Lesion_Classification_backend`](https://github.com/saiyudhaplhaomega/Skin_Lesion_Classification_backend) | FastAPI inference API, PyTorch model serving, Grad-CAM generation, and backend-owned model artifact loading |
-| [`Skin_Lesion_Classification_frontend`](https://github.com/saiyudhaplhaomega/Skin_Lesion_Classification_frontend) | Next.js web app for patient uploads, prediction display, heatmap viewing, consent, doctor review, and admin workflows |
+| [`Skin_Lesion_Classification_frontend`](https://github.com/saiyudhaplhaomega/Skin_Lesion_Classification_frontend) | Next.js web app for image capture/upload, image-quality guidance, prediction display, heatmap comparison, AI explanations, consent, doctor review, and admin workflows |
 | [`Skin_Lesion_XAI_research`](https://github.com/saiyudhaplhaomega/Skin_Lesion_XAI_research) | HAM10000 notebooks, RQ1-RQ6 experiments, research metrics, figures, and training helpers |
 | `Skin_Lesion_GRADCAM_Classification` | This workspace: architecture docs, Terraform infrastructure, build roadmap, security docs, and cross-repo coordination |
 
@@ -20,10 +20,11 @@ The implementation is split across separate repositories so each repo has a clea
 
 ## Build Order
 
-1. Research: prepare data, run notebooks/training, produce candidate model artifacts.
-2. Backend: load model artifacts, expose `/health`, `/predict`, and `/explain`, then add consent/retraining flows.
-3. Frontend: connect the upload, prediction, explanation, consent, doctor, and admin workflows to the backend API.
-4. Infrastructure: deploy AWS services, storage, networking, security controls, and CI/CD when the app contract is stable.
+1. Research: prepare data, run notebooks/training, produce candidate model artifacts and XAI evidence.
+2. Frontend product shell: build upload/camera guidance, original/heatmap/overlay comparison, and explanation panel layout.
+3. Backend: load model artifacts, add image-quality checks, expose `/health`, `/predict`, `/explain`, and guarded explanation APIs.
+4. LLM/RAG: add rule-based fallback first, then online LLM, local desktop LLM, RAG policy, and safety validation.
+5. Infrastructure: deploy AWS services, storage, networking, security controls, queues, and CI/CD when the app contract is stable.
 
 Start with [`docs/HOW_TO_BUILD.md`](docs/HOW_TO_BUILD.md) for the complete phase-by-phase navigation guide.
 
