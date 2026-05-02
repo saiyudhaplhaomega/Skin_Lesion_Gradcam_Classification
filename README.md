@@ -53,7 +53,10 @@ npm run dev
 | --- | --- |
 | [`docs/HOW_TO_BUILD.md`](docs/HOW_TO_BUILD.md) | Build navigation guide and current repo boundaries |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | System design, data flow, and engineering decision questions |
+| [`docs/PRODUCT_LAUNCH_STRATEGY.md`](docs/PRODUCT_LAUNCH_STRATEGY.md) | Product UX, LLM/RAG, guardrails, online/offline modes, and launch roadmap |
+| [`docs/BUILD_GUIDE_AUDIT.md`](docs/BUILD_GUIDE_AUDIT.md) | Current guide status, safe reading order, and known build hiccups |
 | [`docs/BUILD_PHASE_1_INFRASTRUCTURE.md`](docs/BUILD_PHASE_1_INFRASTRUCTURE.md) | Terraform infrastructure setup |
+| [`infra/terraform/README.md`](infra/terraform/README.md) | Terraform module map, safe commands, missing modules, and dev/staging/prod workflow |
 | [`docs/BUILD_PHASE_2_BACKEND.md`](docs/BUILD_PHASE_2_BACKEND.md) | Production backend sequence and backend engineering patterns |
 | [`docs/BUILD_PHASE_3_FRONTEND.md`](docs/BUILD_PHASE_3_FRONTEND.md) | Next.js web app implementation plan |
 | [`docs/BUILD_PHASE_4_MOBILE.md`](docs/BUILD_PHASE_4_MOBILE.md) | React Native / Expo mobile plan |
