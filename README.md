@@ -24,7 +24,9 @@ The implementation is split across separate repositories so each repo has a clea
 2. Frontend product shell: build upload/camera guidance, original/heatmap/overlay comparison, and explanation panel layout.
 3. Backend: load model artifacts, add image-quality checks, expose `/health`, `/predict`, `/explain`, and guarded explanation APIs.
 4. LLM/RAG: add rule-based fallback first, then online LLM, local desktop LLM, RAG policy, and safety validation.
-5. Infrastructure: deploy AWS services, storage, networking, security controls, queues, and CI/CD when the app contract is stable.
+5. CrewAI: add the optional expert-panel workflow only after the core LLM/RAG path is safe, logged, and testable.
+6. Infrastructure: deploy AWS services, storage, networking, security controls, queues, and CI/CD when the app contract is stable.
+7. Scale hardening: add multi-region and sharding support after single-region production is stable.
 
 Start with [`docs/HOW_TO_BUILD.md`](docs/HOW_TO_BUILD.md) for the complete phase-by-phase navigation guide.
 
@@ -53,6 +55,7 @@ npm run dev
 | Doc | Purpose |
 | --- | --- |
 | [`docs/HOW_TO_BUILD.md`](docs/HOW_TO_BUILD.md) | Build navigation guide and current repo boundaries |
+| [`docs/FINAL_ARCHITECTURE_DECISIONS.md`](docs/FINAL_ARCHITECTURE_DECISIONS.md) | Finalized decisions for local/dev/staging/prod, sharding, CrewAI, LLM/RAG, and scale strategy |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | System design, data flow, and engineering decision questions |
 | [`docs/PRODUCT_LAUNCH_STRATEGY.md`](docs/PRODUCT_LAUNCH_STRATEGY.md) | Product UX, LLM/RAG, guardrails, online/offline modes, and launch roadmap |
 | [`docs/BUILD_GUIDE_AUDIT.md`](docs/BUILD_GUIDE_AUDIT.md) | Current guide status, safe reading order, and known build hiccups |

@@ -135,6 +135,30 @@ prod plan/apply
 prod smoke tests
 ```
 
+## Multi-Region Direction
+
+Start with one AWS region. Multi-region is approved as a future scale and resilience path, but it should not be the first Terraform apply.
+
+Recommended order:
+
+1. Single-region dev.
+2. Single-region staging.
+3. Single-region production.
+4. Active-passive multi-region for disaster recovery.
+5. Active-active multi-region only after traffic and reliability needs justify the complexity.
+
+When the project reaches multi-region work, add modules and configuration for:
+
+- S3 Cross-Region Replication
+- regional ECS services and ALBs
+- regional Redis clusters
+- regional SQS queues with idempotent workers
+- Aurora Global Database or another tested Postgres replication strategy
+- Route53 health checks and failover routing
+- per-region secrets and KMS keys
+
+Database sharding is an application/data-model concern first. Terraform should support it later through separate database clusters, networking, secrets, alarms, and routing once the app schema has shard keys such as `user_id` or `tenant_id`.
+
 ## Important Warnings
 
 - `prod.tfvars` contains placeholders. Do not apply it as-is.
@@ -144,4 +168,3 @@ prod smoke tests
 - Keep ECS tasks in private app subnets, not public subnets.
 - Use shared Redis before running more than one backend task.
 - Use queues for long-running model, Grad-CAM, LLM, and training-curation work.
-
