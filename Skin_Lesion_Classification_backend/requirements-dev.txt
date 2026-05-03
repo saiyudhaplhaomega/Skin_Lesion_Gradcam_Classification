@@ -1,0 +1,16 @@
+# Full local dev stack. Includes everything in requirements.txt plus
+# testing, linting, type checking, and notebook support.
+
+-r requirements.txt
+
+# Dev tools
+pytest==8.3.4
+mypy==1.13.0
+ruff==0.9.1
+
+# Notebooks + plotting (for local experimentation)
+ipykernel==6.29.5
+matplotlib==3.10.0
+seaborn==0.13.2
+tensorboard==2.18.0
+rich==13.9.4

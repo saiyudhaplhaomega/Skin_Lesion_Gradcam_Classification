@@ -26,10 +26,11 @@ npm-debug.log*
 .terraform.lock.hcl
 *.tfvars
 
-# Frontend/Backend - these are separate git repos
-Skin_Lesion_Classification_backend/
-Skin_Lesion_Classification_frontend/
-Skin_Lesion_XAI_research/
+# Frontend/Backend - these directories are part of this repo
+# (NOT separate git repos despite historical setup)
+# Skin_Lesion_Classification_backend/  <- DO NOT IGNORE, contains FastAPI app/
+# Skin_Lesion_Classification_frontend/  <- TODO: add when frontend exists
+# Skin_Lesion_XAI_research/
 .vscode/
 .idea/
 *.swp

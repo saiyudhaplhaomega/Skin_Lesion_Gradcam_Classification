@@ -1,0 +1,25 @@
+# Production dependencies - what goes into the Docker image deployed to ECS.
+# Keep this lean. Dev tools and plotting go in requirements-dev.txt.
+
+# ML inference stack
+torch==2.6.0
+torchvision==0.21.0
+timm==1.0.26
+albumentations==1.4.24
+opencv-python==4.10.0.84
+numpy==2.2.2
+pandas==2.2.3
+scikit-learn==1.6.1
+Pillow==11.1.0
+tqdm==4.67.1
+pytorch-grad-cam==1.5.1
+
+# FastAPI service
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+python-multipart==0.0.20
+pydantic==2.10.6
+
+# MLflow + AWS
+mlflow==2.19.0
+boto3==1.37.0
