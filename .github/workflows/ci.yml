@@ -41,24 +41,24 @@ jobs:
 
       - name: Install Python dependencies
         run: |
-          pip install -r requirements.txt
+          pip install -r ./requirements.txt
 
       - name: Lint with Ruff
         run: |
           pip install ruff
-          ruff check app/ --output-format=github
+          ruff check ./app/ --output-format=github
         continue-on-error: true
 
       - name: Type check with MyPy
         run: |
           pip install mypy
-          mypy app/ --ignore-missing-imports --python-version=${{ env.PYTHON_VERSION }}
+          mypy ./app/ --ignore-missing-imports --python-version=${{ env.PYTHON_VERSION }}
         continue-on-error: true
 
       - name: Run pytest
         run: |
           pip install pytest pytest-asyncio pytest-cov httpx
-          pytest tests/ -v --cov=app --cov-report=xml --cov-report=term
+          pytest ./tests/ -v --cov=app --cov-report=xml --cov-report=term
 
       - name: Security scan with Bandit
         run: |
@@ -78,6 +78,7 @@ jobs:
   frontend-ci:
     name: Frontend CI
     runs-on: ubuntu-latest
+    if: false  # No frontend repo found - SKIP UNTIL ADDED
     defaults:
       run:
         working-directory: Skin_Lesion_Classification_frontend
