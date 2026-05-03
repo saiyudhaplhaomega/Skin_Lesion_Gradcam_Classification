@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "backend/**"
+      - "Skin_Lesion_Classification_backend/**"
       - ".github/workflows/deploy-backend-blue-green.yml"
   workflow_dispatch:
     inputs:

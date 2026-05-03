@@ -16,7 +16,6 @@ jobs:
   backend-ci:
     name: Backend CI
     runs-on: ubuntu-latest
-    if: false  # SKIP - Skin_Lesion_Classification_backend is ML research repo without FastAPI app
     defaults:
       run:
         working-directory: Skin_Lesion_Classification_backend
@@ -156,14 +155,16 @@ jobs:
   docker-build:
     name: Docker Build Test
     runs-on: ubuntu-latest
-    if: false  # SKIP - backend/ needs Dockerfile + complete app structure
+    if: false  # SKIP - needs Dockerfile + FastAPI app structure in Skin_Lesion_Classification_backend
     defaults:
       run:
-        working-directory: backend
+        working-directory: Skin_Lesion_Classification_backend
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          path: Skin_Lesion_Classification_backend
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -206,11 +207,13 @@ jobs:
     if: false  # SKIP - docker-build disabled
     defaults:
       run:
-        working-directory: backend
+        working-directory: Skin_Lesion_Classification_backend
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          path: Skin_Lesion_Classification_backend
 
       - name: Run Trivy container scanner
         uses: aquasecurity/trivy-action@master
