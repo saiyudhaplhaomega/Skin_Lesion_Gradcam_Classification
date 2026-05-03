@@ -26,7 +26,8 @@ npm-debug.log*
 .terraform.lock.hcl
 *.tfvars
 
-# Nested standalone repos. The root repo owns workspace docs/infra only.
+# Local private docs and nested standalone repos.
+docs/
 Skin_Lesion_Classification_backend/
 Skin_Lesion_Classification_frontend/
 Skin_Lesion_XAI_research/
