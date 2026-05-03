@@ -2,7 +2,7 @@
 
 This directory contains the root Terraform stack and modules for the Skin Lesion XAI platform.
 
-Use this guide together with `../../docs/BUILD_PHASE_1_INFRASTRUCTURE.md`.
+Use this guide together with `../../docs/20_BUILD_PHASE_1_INFRASTRUCTURE.md`.
 
 ## Current Layout
 

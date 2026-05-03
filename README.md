@@ -28,7 +28,7 @@ The implementation is split across separate repositories so each repo has a clea
 6. Infrastructure: deploy AWS services, storage, networking, security controls, queues, and CI/CD when the app contract is stable.
 7. Scale hardening: add multi-region and sharding support after single-region production is stable.
 
-Start with [`docs/HOW_TO_BUILD.md`](docs/HOW_TO_BUILD.md) for the complete phase-by-phase navigation guide.
+Start with [`docs/01_HOW_TO_BUILD.md`](docs/01_HOW_TO_BUILD.md) for the complete phase-by-phase navigation guide.
 
 ## Local Development
 
@@ -55,27 +55,27 @@ npm run dev
 | Doc | Purpose |
 | --- | --- |
 | [`docs/00_DOC_ORDER.md`](docs/00_DOC_ORDER.md) | Short numbered reading order |
-| [`docs/HOW_TO_BUILD.md`](docs/HOW_TO_BUILD.md) | Build navigation guide and current repo boundaries |
-| [`docs/FINAL_ARCHITECTURE_DECISIONS.md`](docs/FINAL_ARCHITECTURE_DECISIONS.md) | Finalized decisions for local/dev/staging/prod, sharding, CrewAI, LLM/RAG, and scale strategy |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | System design, data flow, and engineering decision questions |
-| [`docs/PRODUCT_LAUNCH_STRATEGY.md`](docs/PRODUCT_LAUNCH_STRATEGY.md) | Product UX, LLM/RAG, guardrails, online/offline modes, and launch roadmap |
-| [`docs/BUILD_GUIDE_AUDIT.md`](docs/BUILD_GUIDE_AUDIT.md) | Current guide status, safe reading order, and known build hiccups |
-| [`docs/BACKEND_FOLLOW_ALONG_GUIDE.md`](docs/BACKEND_FOLLOW_ALONG_GUIDE.md) | Practical backend build steps for North Star V1 |
-| [`docs/PRODUCTION_BACKEND_FOLLOW_ALONG_GUIDE.md`](docs/PRODUCTION_BACKEND_FOLLOW_ALONG_GUIDE.md) | Detailed backend build from an empty directory |
-| [`docs/FRONTEND_FOLLOW_ALONG_GUIDE.md`](docs/FRONTEND_FOLLOW_ALONG_GUIDE.md) | Practical frontend route, auth, and analysis UI build steps |
-| [`docs/BUILD_PHASE_1_INFRASTRUCTURE.md`](docs/BUILD_PHASE_1_INFRASTRUCTURE.md) | Terraform infrastructure setup |
+| [`docs/01_HOW_TO_BUILD.md`](docs/01_HOW_TO_BUILD.md) | Build navigation guide and current repo boundaries |
+| [`docs/04_FINAL_ARCHITECTURE_DECISIONS.md`](docs/04_FINAL_ARCHITECTURE_DECISIONS.md) | Finalized decisions for local/dev/staging/prod, sharding, CrewAI, LLM/RAG, and scale strategy |
+| [`docs/31_ARCHITECTURE.md`](docs/31_ARCHITECTURE.md) | System design, data flow, and engineering decision questions |
+| [`docs/33_PRODUCT_LAUNCH_STRATEGY.md`](docs/33_PRODUCT_LAUNCH_STRATEGY.md) | Product UX, LLM/RAG, guardrails, online/offline modes, and launch roadmap |
+| [`docs/35_BUILD_GUIDE_AUDIT.md`](docs/35_BUILD_GUIDE_AUDIT.md) | Current guide status, safe reading order, and known build hiccups |
+| [`docs/10_BACKEND_FOLLOW_ALONG_GUIDE.md`](docs/10_BACKEND_FOLLOW_ALONG_GUIDE.md) | Practical backend build steps for North Star V1 |
+| [`docs/10B_PRODUCTION_BACKEND_FOLLOW_ALONG_GUIDE.md`](docs/10B_PRODUCTION_BACKEND_FOLLOW_ALONG_GUIDE.md) | Detailed backend build from an empty directory |
+| [`docs/11_FRONTEND_FOLLOW_ALONG_GUIDE.md`](docs/11_FRONTEND_FOLLOW_ALONG_GUIDE.md) | Practical frontend route, auth, and analysis UI build steps |
+| [`docs/20_BUILD_PHASE_1_INFRASTRUCTURE.md`](docs/20_BUILD_PHASE_1_INFRASTRUCTURE.md) | Terraform infrastructure setup |
 | [`infra/terraform/README.md`](infra/terraform/README.md) | Terraform module map, safe commands, missing modules, and dev/staging/prod workflow |
-| [`docs/BUILD_PHASE_2_BACKEND.md`](docs/BUILD_PHASE_2_BACKEND.md) | Production backend sequence and backend engineering patterns |
-| [`docs/BUILD_PHASE_3_FRONTEND.md`](docs/BUILD_PHASE_3_FRONTEND.md) | Next.js web app implementation plan |
-| [`docs/BUILD_PHASE_4_MOBILE.md`](docs/BUILD_PHASE_4_MOBILE.md) | React Native / Expo mobile plan |
-| [`docs/BUILD_PHASE_5_CICD.md`](docs/BUILD_PHASE_5_CICD.md) | CI/CD, MLflow, and deployment plan |
-| [`docs/PRODUCTION_CI_CD_FIXES_GUIDE.md`](docs/PRODUCTION_CI_CD_FIXES_GUIDE.md) | Production CI/CD fixes and quality gates |
-| [`docs/PRODUCTION_TERRAFORM_FIXES_GUIDE.md`](docs/PRODUCTION_TERRAFORM_FIXES_GUIDE.md) | Production Terraform fixes and missing runtime wiring |
-| [`docs/RESILIENCE_ENGINEERING_GUIDE.md`](docs/RESILIENCE_ENGINEERING_GUIDE.md) | Circuit breakers, timeouts, bulkheads, retries, and graceful degradation |
-| [`docs/PRODUCTION_BUILD_REVIEW.md`](docs/PRODUCTION_BUILD_REVIEW.md) | Current implementation gaps and corrected build order |
-| [`docs/SECURITY_CHECKLIST.md`](docs/SECURITY_CHECKLIST.md) | Pre-launch security checklist |
-| [`docs/GDPR_COMPLIANCE.md`](docs/GDPR_COMPLIANCE.md) | Consent, retention, deletion, and privacy requirements |
-| [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) | Error lookup and fixes |
+| [`docs/12_BUILD_PHASE_2_BACKEND.md`](docs/12_BUILD_PHASE_2_BACKEND.md) | Production backend sequence and backend engineering patterns |
+| [`docs/13_BUILD_PHASE_3_FRONTEND.md`](docs/13_BUILD_PHASE_3_FRONTEND.md) | Next.js web app implementation plan |
+| [`docs/30_BUILD_PHASE_4_MOBILE.md`](docs/30_BUILD_PHASE_4_MOBILE.md) | React Native / Expo mobile plan |
+| [`docs/24_BUILD_PHASE_5_CICD.md`](docs/24_BUILD_PHASE_5_CICD.md) | CI/CD, MLflow, and deployment plan |
+| [`docs/24B_PRODUCTION_CI_CD_FIXES_GUIDE.md`](docs/24B_PRODUCTION_CI_CD_FIXES_GUIDE.md) | Production CI/CD fixes and quality gates |
+| [`docs/24C_PRODUCTION_TERRAFORM_FIXES_GUIDE.md`](docs/24C_PRODUCTION_TERRAFORM_FIXES_GUIDE.md) | Production Terraform fixes and missing runtime wiring |
+| [`docs/17_RESILIENCE_ENGINEERING_GUIDE.md`](docs/17_RESILIENCE_ENGINEERING_GUIDE.md) | Circuit breakers, timeouts, bulkheads, retries, and graceful degradation |
+| [`docs/02_PRODUCTION_BUILD_REVIEW.md`](docs/02_PRODUCTION_BUILD_REVIEW.md) | Current implementation gaps and corrected build order |
+| [`docs/15_SECURITY_CHECKLIST.md`](docs/15_SECURITY_CHECKLIST.md) | Pre-launch security checklist |
+| [`docs/14_GDPR_COMPLIANCE.md`](docs/14_GDPR_COMPLIANCE.md) | Consent, retention, deletion, and privacy requirements |
+| [`docs/26_TROUBLESHOOTING.md`](docs/26_TROUBLESHOOTING.md) | Error lookup and fixes |
 
 ## Security Notes
 
