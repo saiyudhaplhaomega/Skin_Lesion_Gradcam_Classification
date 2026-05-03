@@ -28,11 +28,19 @@ infra/terraform/
     vpc/
     vpc-flow-logs/
     waf/
+    appconfig/
+    auto-heal-lambda/
+    auto-rollback-lambda/
+    blue-green/
+    canary/
+    cloudwatch-alarms/
+    ecs-service/
+    sns/
 ```
 
 ## What Exists Today
 
-The current stack provisions foundation infrastructure:
+The current root `main.tf` provisions foundation infrastructure:
 
 - VPC with public, app, and data subnets
 - Cognito user pools
@@ -49,6 +57,8 @@ The current stack provisions foundation infrastructure:
 - ECS cluster
 - ALB
 
+Additional module directories exist for AppConfig, blue-green/canary deployment, ECS service, auto-heal/rollback Lambda, SNS, and CloudWatch alarms. Treat those as available module scaffolds until they are wired into `main.tf`, validated, planned, and tested.
+
 ## What Is Still Needed Before Production
 
 Add these modules before real production traffic:
@@ -58,7 +68,7 @@ Add these modules before real production traffic:
 | `ecr/` | Backend container registry |
 | `elasticache/` | Shared Redis for prediction/explanation jobs |
 | `sqs/` | Async consent, validation, approval, and worker queues |
-| `cloudwatch-alarms/` | Alerting for API, ECS, RDS, Redis, and model failures |
+| `cloudwatch-alarms/` wiring | Alerting for API, ECS, RDS, Redis, and model failures |
 | `route53-acm/` | HTTPS custom domain and certificates |
 | `mlflow/` | Model registry and model promotion workflow |
 | `terraform-backend/` | Remote state bucket and DynamoDB locking |
