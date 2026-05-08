@@ -1,180 +1,87 @@
-# Terraform Guide
+# Terraform Learning Area
 
-This directory contains the root Terraform stack and modules for the Skin Lesion XAI platform.
+This folder is for Terraform learning.
 
-Use this guide together with `../../docs/20_BUILD_PHASE_1_INFRASTRUCTURE.md`.
+The root `main.tf` has been removed on purpose so you can build from scratch.
 
-## Current Layout
+For beginner learning, start with the guide:
+
+```text
+docs/04_TERRAFORM_FROM_EMPTY_MAIN.md
+```
+
+## Why You Should Not Start With A Full `main.tf`
+
+A large `main.tf` that creates many services at once is hard to learn from. It also creates errors for resources you have not studied yet.
+
+The learning path is:
+
+```text
+scratch folder -> provider block -> validate -> one resource -> plan -> understand -> maybe apply
+```
+
+## What To Do First
+
+From the repo root, create or use:
 
 ```text
 infra/terraform/
-  main.tf
-  Makefile
-  environments/
-    dev.tfvars
-    prod.tfvars
-  modules/
-    alb/
-    cloudtrail/
-    cognito/
-    ecs/
-    ecs-task-role/
-    guardduty/
-    kms/
-    rds/
-    s3-logging/
-    s3-training/
-    secrets-manager/
-    vpc/
-    vpc-flow-logs/
-    waf/
-    appconfig/
-    auto-heal-lambda/
-    auto-rollback-lambda/
-    blue-green/
-    canary/
-    cloudwatch-alarms/
-    ecs-service/
-    sns/
 ```
 
-## What Exists Today
+Then check Terraform:
 
-The current root `main.tf` provisions foundation infrastructure:
-
-- VPC with public, app, and data subnets
-- Cognito user pools
-- S3 training bucket
-- GuardDuty
-- ECS task roles
-- RDS PostgreSQL
-- CloudTrail
-- VPC Flow Logs
-- WAF
-- Secrets Manager placeholders
-- KMS
-- S3 logging bucket
-- ECS cluster
-- ALB
-
-Additional module directories exist for AppConfig, blue-green/canary deployment, ECS service, auto-heal/rollback Lambda, SNS, and CloudWatch alarms. Treat those as available module scaffolds until they are wired into `main.tf`, validated, planned, and tested.
-
-## What Is Still Needed Before Production
-
-Add these modules before real production traffic:
-
-| Module | Why |
-|---|---|
-| `ecr/` | Backend container registry |
-| `elasticache/` | Shared Redis for prediction/explanation jobs |
-| `sqs/` | Async consent, validation, approval, and worker queues |
-| `cloudwatch-alarms/` wiring | Alerting for API, ECS, RDS, Redis, and model failures |
-| `route53-acm/` | HTTPS custom domain and certificates |
-| `mlflow/` | Model registry and model promotion workflow |
-| `terraform-backend/` | Remote state bucket and DynamoDB locking |
-| `vpc-endpoints/` | Private access to ECR, CloudWatch Logs, STS, and Secrets Manager |
-
-Build these one at a time. Do not add all modules in one commit.
-
-## Safe Learning Workflow
-
-Start with dev, not prod.
-
-```bash
-cd infra/terraform
-make init
-make check
-make validate
-make plan ENV=dev
+```powershell
+terraform version
 ```
 
-Only apply after you understand the plan:
+If Terraform is installed, continue with the guide.
 
-```bash
-make apply ENV=dev
+If Terraform is not installed, install it before writing any `.tf` files.
+
+## Module Folders
+
+Module folders may exist as reference material.
+
+Do not wire or apply modules until a guide tells you:
+
+1. what the module does
+2. why you need it
+3. what it will cost
+4. what command checks it
+5. what the expected Terraform plan should roughly show
+
+## Safe Terraform Loop
+
+Use this loop for every small change:
+
+```powershell
+terraform fmt
+terraform validate
+terraform plan
 ```
 
-For production:
+Do not run:
 
-```bash
-make check-prod
-make plan ENV=prod
+```powershell
+terraform apply
 ```
 
-Do not apply production until remote state, locking, secrets, rollback, and smoke tests are ready.
+until you understand the plan output.
 
-## Add A New Module Safely
+## Build Order For Cloud Infrastructure
 
-Use this sequence for every new module:
+Build later in this order:
 
-1. Create `modules/<name>/main.tf`.
-2. Define inputs and outputs in the module.
-3. Wire it in `main.tf`.
-4. Add environment variables to `environments/dev.tfvars` and `environments/prod.tfvars` if needed.
-5. Run:
+1. provider only
+2. one S3 bucket for learning
+3. VPC
+4. ECR
+5. local Docker image pushed to ECR
+6. Kubernetes local
+7. EKS dev
+8. database
+9. SQS/EventBridge
+10. monitoring
+11. CI/CD
 
-```bash
-make format
-make validate
-make plan ENV=dev
-```
-
-6. Commit only that module.
-
-## Dev, Staging, Production
-
-The current repo has `dev.tfvars` and `prod.tfvars`. Before a real launch, add staging:
-
-```text
-environments/
-  dev.tfvars
-  staging.tfvars
-  prod.tfvars
-```
-
-Recommended promotion:
-
-```text
-local plan
-dev apply
-dev smoke tests
-staging plan/apply
-staging smoke tests
-manual approval
-prod plan/apply
-prod smoke tests
-```
-
-## Multi-Region Direction
-
-Start with one AWS region. Multi-region is approved as a future scale and resilience path, but it should not be the first Terraform apply.
-
-Recommended order:
-
-1. Single-region dev.
-2. Single-region staging.
-3. Single-region production.
-4. Active-passive multi-region for disaster recovery.
-5. Active-active multi-region only after traffic and reliability needs justify the complexity.
-
-When the project reaches multi-region work, add modules and configuration for:
-
-- S3 Cross-Region Replication
-- regional ECS services and ALBs
-- regional Redis clusters
-- regional SQS queues with idempotent workers
-- Aurora Global Database or another tested Postgres replication strategy
-- Route53 health checks and failover routing
-- per-region secrets and KMS keys
-
-Database sharding is an application/data-model concern first. Terraform should support it later through separate database clusters, networking, secrets, alarms, and routing once the app schema has shard keys such as `user_id` or `tenant_id`.
-
-## Important Warnings
-
-- `prod.tfvars` contains placeholders. Do not apply it as-is.
-- Do not commit real passwords, API keys, or patient data.
-- Use Secrets Manager for runtime secrets.
-- Use remote Terraform state before team usage.
-- Keep ECS tasks in private app subnets, not public subnets.
-- Use shared Redis before running more than one backend task.
-- Use queues for long-running model, Grad-CAM, LLM, and training-curation work.
+This order keeps cloud errors small and understandable.

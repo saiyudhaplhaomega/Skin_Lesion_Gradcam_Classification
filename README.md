@@ -1,82 +1,98 @@
-# Skin Lesion Classification Platform
+# Skin Lesion Classification Learning Workspace
 
-Workspace-level architecture, infrastructure, and build guidance for the Skin Lesion Classification platform.
+This workspace is for learning how to build the Skin Lesion platform step by step.
 
-The implementation is split across separate repositories so each repo has a clear job:
+The goal is not to start with a finished cloud architecture. The goal is:
 
-| Repository | Purpose |
-| --- | --- |
-| [`Skin_Lesion_Classification_backend`](https://github.com/saiyudhaplhaomega/Skin_Lesion_Classification_backend) | FastAPI inference API, PyTorch model serving, Grad-CAM generation, and backend-owned model artifact loading |
-| [`Skin_Lesion_Classification_frontend`](https://github.com/saiyudhaplhaomega/Skin_Lesion_Classification_frontend) | Next.js web app for image capture/upload, image-quality guidance, prediction display, heatmap comparison, AI explanations, consent, doctor review, and admin workflows |
-| [`Skin_Lesion_XAI_research`](https://github.com/saiyudhaplhaomega/Skin_Lesion_XAI_research) | HAM10000 notebooks, RQ1-RQ6 experiments, research metrics, figures, and training helpers |
-| `Skin_Lesion_GRADCAM_Classification` | This workspace: architecture docs, Terraform infrastructure, build roadmap, security docs, and cross-repo coordination |
-
-## Current Build Reality
-
-- Research notebooks and experiment outputs belong in `Skin_Lesion_XAI_research`.
-- The frontend should not be the source of truth for notebooks, training scripts, or research outputs.
-- The backend consumes model artifacts and exposes API endpoints; it should not document RQ notebooks as backend-owned work.
-- The root docs describe the full system and build order.
-
-## Build Order
-
-1. Research: prepare data, run notebooks/training, produce candidate model artifacts and XAI evidence.
-2. Backend API contract: build `/health`, image-quality checks, mocked `/predict`, tests, and Docker before connecting a UI.
-3. Frontend product shell: build upload/camera guidance, prediction display, original/heatmap/overlay comparison, and explanation panel layout against the backend contract.
-4. LLM/RAG: add rule-based fallback first, then online LLM, local desktop LLM, RAG policy, and safety validation.
-5. CrewAI: add the optional expert-panel workflow only after the core LLM/RAG path is safe, logged, and testable.
-6. Infrastructure: deploy AWS services, storage, networking, security controls, queues, and CI/CD when the app contract is stable.
-7. Scale hardening: add multi-region and sharding support after single-region production is stable.
-
-Start with [`docs/01_HOW_TO_BUILD.md`](docs/01_HOW_TO_BUILD.md) for the complete phase-by-phase navigation guide.
-
-## Local Development
-
-```bash
-# Research notebooks and training helpers
-cd Skin_Lesion_XAI_research
-make setup
-make register-kernel
-make run-notebook
-
-# Backend API
-cd ../Skin_Lesion_Classification_backend
-make setup
-make run
-
-# Frontend app
-cd ../Skin_Lesion_Classification_frontend
-npm install
-npm run dev
+```text
+build one small part -> understand why it exists -> run a check -> move to the next part
 ```
 
-## Documentation Map
+## Start Here
 
-| Doc | Purpose |
-| --- | --- |
-| [`docs/00_DOC_ORDER.md`](docs/00_DOC_ORDER.md) | Short numbered reading order |
-| [`docs/01_HOW_TO_BUILD.md`](docs/01_HOW_TO_BUILD.md) | Build navigation guide and current repo boundaries |
-| [`docs/04_FINAL_ARCHITECTURE_DECISIONS.md`](docs/04_FINAL_ARCHITECTURE_DECISIONS.md) | Finalized decisions for local/dev/staging/prod, sharding, CrewAI, LLM/RAG, and scale strategy |
-| [`docs/31_ARCHITECTURE.md`](docs/31_ARCHITECTURE.md) | System design, data flow, and engineering decision questions |
-| [`docs/33_PRODUCT_LAUNCH_STRATEGY.md`](docs/33_PRODUCT_LAUNCH_STRATEGY.md) | Product UX, LLM/RAG, guardrails, online/offline modes, and launch roadmap |
-| [`docs/35_BUILD_GUIDE_AUDIT.md`](docs/35_BUILD_GUIDE_AUDIT.md) | Current guide status, safe reading order, and known build hiccups |
-| [`docs/10_BACKEND_FOLLOW_ALONG_GUIDE.md`](docs/10_BACKEND_FOLLOW_ALONG_GUIDE.md) | Practical backend build steps for North Star V1 |
-| [`docs/10B_PRODUCTION_BACKEND_FOLLOW_ALONG_GUIDE.md`](docs/10B_PRODUCTION_BACKEND_FOLLOW_ALONG_GUIDE.md) | Detailed backend build from an empty directory |
-| [`docs/11_FRONTEND_FOLLOW_ALONG_GUIDE.md`](docs/11_FRONTEND_FOLLOW_ALONG_GUIDE.md) | Practical frontend route, auth, and analysis UI build steps |
-| [`docs/20_BUILD_PHASE_1_INFRASTRUCTURE.md`](docs/20_BUILD_PHASE_1_INFRASTRUCTURE.md) | Terraform infrastructure setup |
-| [`infra/terraform/README.md`](infra/terraform/README.md) | Terraform module map, safe commands, missing modules, and dev/staging/prod workflow |
-| [`docs/12_BUILD_PHASE_2_BACKEND.md`](docs/12_BUILD_PHASE_2_BACKEND.md) | Production backend sequence and backend engineering patterns |
-| [`docs/13_BUILD_PHASE_3_FRONTEND.md`](docs/13_BUILD_PHASE_3_FRONTEND.md) | Next.js web app implementation plan |
-| [`docs/30_BUILD_PHASE_4_MOBILE.md`](docs/30_BUILD_PHASE_4_MOBILE.md) | React Native / Expo mobile plan |
-| [`docs/24_BUILD_PHASE_5_CICD.md`](docs/24_BUILD_PHASE_5_CICD.md) | CI/CD, MLflow, and deployment plan |
-| [`docs/24B_PRODUCTION_CI_CD_FIXES_GUIDE.md`](docs/24B_PRODUCTION_CI_CD_FIXES_GUIDE.md) | Production CI/CD fixes and quality gates |
-| [`docs/24C_PRODUCTION_TERRAFORM_FIXES_GUIDE.md`](docs/24C_PRODUCTION_TERRAFORM_FIXES_GUIDE.md) | Production Terraform fixes and missing runtime wiring |
-| [`docs/17_RESILIENCE_ENGINEERING_GUIDE.md`](docs/17_RESILIENCE_ENGINEERING_GUIDE.md) | Circuit breakers, timeouts, bulkheads, retries, and graceful degradation |
-| [`docs/02_PRODUCTION_BUILD_REVIEW.md`](docs/02_PRODUCTION_BUILD_REVIEW.md) | Current implementation gaps and corrected build order |
-| [`docs/15_SECURITY_CHECKLIST.md`](docs/15_SECURITY_CHECKLIST.md) | Pre-launch security checklist |
-| [`docs/14_GDPR_COMPLIANCE.md`](docs/14_GDPR_COMPLIANCE.md) | Consent, retention, deletion, and privacy requirements |
-| [`docs/26_TROUBLESHOOTING.md`](docs/26_TROUBLESHOOTING.md) | Error lookup and fixes |
+Read the guides in this order:
 
-## Security Notes
+| Order | Guide | Purpose |
+|---:|---|---|
+| 1 | [`docs/00_START_HERE.md`](docs/00_START_HERE.md) | What exists now, what not to build yet |
+| 2 | [`docs/01_BUILD_ORDER.md`](docs/01_BUILD_ORDER.md) | Full beginner build sequence |
+| 3 | [`docs/02_LOCAL_BACKEND_FIRST.md`](docs/02_LOCAL_BACKEND_FIRST.md) | First FastAPI `/health` endpoint and test |
+| 4 | [`docs/03_LOCAL_FRONTEND_AFTER_BACKEND.md`](docs/03_LOCAL_FRONTEND_AFTER_BACKEND.md) | Frontend only after backend shape exists |
+| 5 | [`docs/04_TERRAFORM_FROM_EMPTY_MAIN.md`](docs/04_TERRAFORM_FROM_EMPTY_MAIN.md) | Create Terraform `main.tf` yourself from zero |
+| 6 | [`docs/05_KUBERNETES_AFTER_DOCKER.md`](docs/05_KUBERNETES_AFTER_DOCKER.md) | Kubernetes only after Docker works |
+| 7 | [`docs/06_EVENT_WORKFLOW_AFTER_LOCAL_API.md`](docs/06_EVENT_WORKFLOW_AFTER_LOCAL_API.md) | Consent workflow with database state, outbox, SQS, EventBridge |
+| 8 | [`docs/07_CICD_ONLY_AFTER_TESTS.md`](docs/07_CICD_ONLY_AFTER_TESTS.md) | GitHub Actions only after useful local checks exist |
+| 9 | [`docs/08_APPLICATION_FEATURES.md`](docs/08_APPLICATION_FEATURES.md) | Feature list for the application |
 
-Do not commit datasets, patient images, `.env` files, local virtual environments, generated caches, or large model checkpoints unless a repo intentionally tracks them. Research outputs should be reviewed before publishing because figures and CSVs can reveal dataset or experiment details.
+Then use the full-project handholding guides:
+
+| Order | Guide |
+|---:|---|
+| 10 | [`docs/build/09_BACKEND_API_HANDHOLDING.md`](docs/build/09_BACKEND_API_HANDHOLDING.md) |
+| 11 | [`docs/build/10_DATABASE_AND_MIGRATIONS_HANDHOLDING.md`](docs/build/10_DATABASE_AND_MIGRATIONS_HANDHOLDING.md) |
+| 12 | [`docs/build/11_UPLOAD_AND_MOCK_PREDICTION_HANDHOLDING.md`](docs/build/11_UPLOAD_AND_MOCK_PREDICTION_HANDHOLDING.md) |
+| 13 | [`docs/build/12_MODEL_AND_GRADCAM_HANDHOLDING.md`](docs/build/12_MODEL_AND_GRADCAM_HANDHOLDING.md) |
+| 14 | [`docs/build/13_FRONTEND_WORKFLOW_HANDHOLDING.md`](docs/build/13_FRONTEND_WORKFLOW_HANDHOLDING.md) |
+| 15 | [`docs/build/14_DOCKER_HANDHOLDING.md`](docs/build/14_DOCKER_HANDHOLDING.md) |
+| 16 | [`docs/build/15_TERRAFORM_VPC_HANDHOLDING.md`](docs/build/15_TERRAFORM_VPC_HANDHOLDING.md) |
+| 17 | [`docs/build/16_KUBERNETES_LOCAL_HANDHOLDING.md`](docs/build/16_KUBERNETES_LOCAL_HANDHOLDING.md) |
+| 18 | [`docs/build/17_ECR_AND_EKS_HANDHOLDING.md`](docs/build/17_ECR_AND_EKS_HANDHOLDING.md) |
+| 19 | [`docs/build/18_EVENTS_SQS_WORKER_HANDHOLDING.md`](docs/build/18_EVENTS_SQS_WORKER_HANDHOLDING.md) |
+| 20 | [`docs/build/19_SECURITY_COMPLIANCE_HANDHOLDING.md`](docs/build/19_SECURITY_COMPLIANCE_HANDHOLDING.md) |
+| 21 | [`docs/build/20_OBSERVABILITY_RELIABILITY_HANDHOLDING.md`](docs/build/20_OBSERVABILITY_RELIABILITY_HANDHOLDING.md) |
+| 22 | [`docs/build/21_CICD_HANDHOLDING.md`](docs/build/21_CICD_HANDHOLDING.md) |
+| 23 | [`docs/build/22_FULL_PROJECT_TEST_PLAN.md`](docs/build/22_FULL_PROJECT_TEST_PLAN.md) |
+| 24 | [`docs/build/23_FUTURE_PLANS_REBUILT.md`](docs/build/23_FUTURE_PLANS_REBUILT.md) |
+| 25 | [`docs/build/24_RECOVERY_AND_SOURCE_NOTES.md`](docs/build/24_RECOVERY_AND_SOURCE_NOTES.md) |
+
+Use the advanced guides for architecture reasoning:
+
+| Order | Guide |
+|---:|---|
+| 30 | [`docs/advanced/30_FULL_PROJECT_ROADMAP.md`](docs/advanced/30_FULL_PROJECT_ROADMAP.md) |
+| 31 | [`docs/advanced/31_REQUIREMENTS_SECURITY_COMPLIANCE.md`](docs/advanced/31_REQUIREMENTS_SECURITY_COMPLIANCE.md) |
+| 32 | [`docs/advanced/32_CLOUD_INFRASTRUCTURE_PATH.md`](docs/advanced/32_CLOUD_INFRASTRUCTURE_PATH.md) |
+| 33 | [`docs/advanced/33_KUBERNETES_EKS_PATH.md`](docs/advanced/33_KUBERNETES_EKS_PATH.md) |
+| 34 | [`docs/advanced/34_EVENT_WORKFLOW_PATH.md`](docs/advanced/34_EVENT_WORKFLOW_PATH.md) |
+| 35 | [`docs/advanced/35_DATABASE_MULTI_REGION_PATH.md`](docs/advanced/35_DATABASE_MULTI_REGION_PATH.md) |
+| 36 | [`docs/advanced/36_OPERATIONS_RELIABILITY_COST.md`](docs/advanced/36_OPERATIONS_RELIABILITY_COST.md) |
+
+## Current Rule
+
+No GitHub Actions workflows are included right now.
+
+No Terraform root `infra/terraform/main.tf` is included right now.
+
+You will create those files yourself when the guide reaches that step.
+
+Each handholding guide should tell you:
+
+1. which directory to run commands from
+2. which exact file path to create or edit
+3. which check proves the step worked
+
+## Repository Roles
+
+| Path | Purpose |
+|---|---|
+| `Skin_Lesion_Classification_backend/` | Backend repo. Build local FastAPI here first. |
+| `Skin_Lesion_Classification_frontend/` | Frontend repo. Build after backend health/mock analysis works. |
+| `Skin_Lesion_XAI_research/` | Research notebooks and model experiments. |
+| `infra/terraform/` | Terraform learning area. Root `main.tf` starts absent. |
+| `docs/` | Beginner guides and feature list. |
+| `docs/build/` | Copy-paste handholding guides for building the full project. |
+| `docs/advanced/` | Architecture explanations for later decisions. |
+
+## What Comes Later
+
+Later, after the local app works:
+
+- Docker
+- Kubernetes
+- EKS Auto Mode
+- SQS and EventBridge
+- Aurora DSQL or Postgres
+- GitHub Actions
+- multi-region
+
+Do not build those early. Each one gets easier after the previous step works.

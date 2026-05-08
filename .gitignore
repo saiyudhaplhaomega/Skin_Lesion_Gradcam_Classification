@@ -27,7 +27,22 @@ npm-debug.log*
 *.tfvars
 
 # Local private docs and nested standalone repos.
-docs/
+docs/*
+!docs/
+!docs/00_START_HERE.md
+!docs/01_BUILD_ORDER.md
+!docs/02_LOCAL_BACKEND_FIRST.md
+!docs/03_LOCAL_FRONTEND_AFTER_BACKEND.md
+!docs/04_TERRAFORM_FROM_EMPTY_MAIN.md
+!docs/05_KUBERNETES_AFTER_DOCKER.md
+!docs/06_EVENT_WORKFLOW_AFTER_LOCAL_API.md
+!docs/07_CICD_ONLY_AFTER_TESTS.md
+!docs/08_APPLICATION_FEATURES.md
+!docs/99_DOC_ORDER.md
+!docs/advanced/
+!docs/advanced/*.md
+!docs/build/
+!docs/build/*.md
 Skin_Lesion_Classification_backend/
 Skin_Lesion_Classification_frontend/
 Skin_Lesion_XAI_research/
