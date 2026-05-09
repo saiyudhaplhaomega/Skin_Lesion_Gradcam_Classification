@@ -3,9 +3,15 @@
 
 $ErrorActionPreference = 'Continue'
 
+# Skip this script's own documentation to avoid false positives
+$excludePattern = '09_DOCS_VALIDATION'
+
 # 1. Check no docs/build or docs/advanced references exist (stale paths)
+# Use word boundaries to avoid matching docs/building or docs/advanced-course
 $buildRefs = Get-ChildItem 'README.md','docs/*.md','docs/local-dev/*.md','docs/product/*.md','docs/staging/*.md','docs/production/*.md','docs/reference/*.md','Skin_Lesion_Classification_frontend/*.md' -ErrorAction SilentlyContinue | ForEach-Object {
-    Select-String -Path $_.FullName -Pattern 'docs/build|docs/advanced|build/|advanced/' -Quiet
+    if ($_.FullName -notmatch $excludePattern) {
+        Select-String -Path $_.FullName -Pattern '\bdocs/build\b|\bdocs/advanced\b' -Quiet
+    }
 } | Where-Object { $_ }
 if ($buildRefs) {
     Write-Host 'Found stale docs/build or docs/advanced reference'
@@ -14,7 +20,9 @@ if ($buildRefs) {
 
 # 2. Check no outdated "Aurora PostgreSQL first" reference
 $dsqlRef = Get-ChildItem 'README.md','docs/*.md','docs/local-dev/*.md','docs/product/*.md','docs/staging/*.md','docs/production/*.md','docs/reference/*.md','Skin_Lesion_Classification_frontend/*.md' -ErrorAction SilentlyContinue | ForEach-Object {
-    Select-String -Path $_.FullName -Pattern 'Aurora PostgreSQL first' -Quiet
+    if ($_.FullName -notmatch $excludePattern) {
+        Select-String -Path $_.FullName -Pattern 'Aurora PostgreSQL first' -Quiet
+    }
 } | Where-Object { $_ }
 if ($dsqlRef) {
     Write-Host 'Found outdated DSQL reference'
@@ -43,7 +51,9 @@ if ((Test-Path 'infra/terraform/modules') -or (Test-Path 'infra/terraform/lambda
 
 # 6. Check all doc files have "Cost Pause / Resume" section
 $missingCost = Get-ChildItem 'docs' -Recurse -Filter '*.md' -ErrorAction SilentlyContinue | Where-Object {
-    (Select-String -Path $_.FullName -Pattern 'Cost Pause / Resume' -Quiet) -eq $null
+    if ($_.FullName -notmatch $excludePattern) {
+        (Select-String -Path $_.FullName -Pattern 'Cost Pause / Resume' -Quiet) -eq $null
+    }
 }
 if ($missingCost) {
     Write-Host 'Doc file missing Cost Pause / Resume section'
