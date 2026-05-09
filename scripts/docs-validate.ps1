@@ -49,14 +49,13 @@ if ((Test-Path 'infra/terraform/modules') -or (Test-Path 'infra/terraform/lambda
     exit 1
 }
 
-# 6. Check all doc files have "Cost Pause / Resume" section
-$missingCost = Get-ChildItem 'docs' -Recurse -Filter '*.md' -ErrorAction SilentlyContinue | Where-Object {
-    if ($_.FullName -notmatch $excludePattern) {
-        (Select-String -Path $_.FullName -Pattern 'Cost Pause / Resume' -Quiet) -eq $null
-    }
+# 6. Check cloud guides have "Cost Pause / Resume" section
+# Only staging and production guides create cloud resources
+$missingCost = Get-ChildItem 'docs/staging/*.md','docs/production/*.md' -ErrorAction SilentlyContinue | Where-Object {
+    (Select-String -Path $_.FullName -Pattern 'Cost Pause / Resume' -Quiet) -eq $null
 }
 if ($missingCost) {
-    Write-Host 'Doc file missing Cost Pause / Resume section'
+    Write-Host 'Cloud guide missing Cost Pause / Resume section'
     exit 1
 }
 
