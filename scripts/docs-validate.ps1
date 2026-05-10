@@ -5,70 +5,123 @@ $ErrorActionPreference = 'Continue'
 
 # Skip this script's own documentation to avoid false positives
 $excludePattern = '09_DOCS_VALIDATION'
+$root = (Get-Location).Path
 
-# 1. Check no docs/build or docs/advanced references exist (stale paths)
+function Fail($message) {
+    Write-Host $message
+    exit 1
+}
+
+$allMarkdown = Get-ChildItem 'README.md','docs/*.md','docs/local-dev/*.md','docs/product/*.md','docs/staging/*.md','docs/production/*.md','docs/reference/*.md','Skin_Lesion_Classification_frontend/*.md' -ErrorAction SilentlyContinue
+
+# 1. Check every file listed in docs/99_DOC_ORDER.md exists
+$docOrderPath = 'docs/99_DOC_ORDER.md'
+$docOrderRaw = Get-Content $docOrderPath -Raw -ErrorAction SilentlyContinue
+if (-not $docOrderRaw) {
+    Fail 'Missing docs/99_DOC_ORDER.md'
+}
+
+$orderedGuideMatches = [regex]::Matches($docOrderRaw, '`([^`]+\.md)`')
+foreach ($match in $orderedGuideMatches) {
+    $relative = $match.Groups[1].Value
+    if ($relative -like 'docs/*') {
+        $candidate = $relative
+    } else {
+        $candidate = Join-Path 'docs' $relative
+    }
+
+    if (-not (Test-Path $candidate)) {
+        Fail "Guide listed in docs/99_DOC_ORDER.md does not exist: $candidate"
+    }
+}
+
+# 2. Check relative Markdown links resolve
+foreach ($file in $allMarkdown) {
+    $content = Get-Content $file.FullName -Raw
+    $linkMatches = [regex]::Matches($content, '\[[^\]]+\]\(([^)]+)\)')
+    foreach ($linkMatch in $linkMatches) {
+        $target = $linkMatch.Groups[1].Value
+        if ($target -match '^(https?:|mailto:|#)') {
+            continue
+        }
+
+        $targetPath = ($target -split '#')[0]
+        if ([string]::IsNullOrWhiteSpace($targetPath)) {
+            continue
+        }
+
+        $targetPath = [uri]::UnescapeDataString($targetPath)
+        if ($targetPath.StartsWith('<') -and $targetPath.EndsWith('>')) {
+            $targetPath = $targetPath.Substring(1, $targetPath.Length - 2)
+        }
+
+        $resolvedPath = Join-Path $file.DirectoryName $targetPath
+        if (-not (Test-Path $resolvedPath)) {
+            $relativeFile = $file.FullName.Substring($root.Length + 1)
+            Fail "Broken Markdown link in ${relativeFile}: $target"
+        }
+    }
+}
+
+# 3. Check no docs/build or docs/advanced references exist (stale paths)
 # Use word boundaries to avoid matching docs/building or docs/advanced-course
-$buildRefs = Get-ChildItem 'README.md','docs/*.md','docs/local-dev/*.md','docs/product/*.md','docs/staging/*.md','docs/production/*.md','docs/reference/*.md','Skin_Lesion_Classification_frontend/*.md' -ErrorAction SilentlyContinue | ForEach-Object {
+$buildRefs = $allMarkdown | ForEach-Object {
     if ($_.FullName -notmatch $excludePattern) {
         Select-String -Path $_.FullName -Pattern '\bdocs/build\b|\bdocs/advanced\b' -Quiet
     }
 } | Where-Object { $_ }
 if ($buildRefs) {
-    Write-Host 'Found stale docs/build or docs/advanced reference'
-    exit 1
+    Fail 'Found stale docs/build or docs/advanced reference'
 }
 
-# 2. Check no outdated "Aurora PostgreSQL first" reference
-$dsqlRef = Get-ChildItem 'README.md','docs/*.md','docs/local-dev/*.md','docs/product/*.md','docs/staging/*.md','docs/production/*.md','docs/reference/*.md','Skin_Lesion_Classification_frontend/*.md' -ErrorAction SilentlyContinue | ForEach-Object {
+# 4. Check no outdated "Aurora PostgreSQL first" reference
+$dsqlRef = $allMarkdown | ForEach-Object {
     if ($_.FullName -notmatch $excludePattern) {
         Select-String -Path $_.FullName -Pattern 'Aurora PostgreSQL first' -Quiet
     }
 } | Where-Object { $_ }
 if ($dsqlRef) {
-    Write-Host 'Found outdated DSQL reference'
-    exit 1
+    Fail 'Found outdated DSQL reference'
 }
 
-# 3. Check EKS auto-heal guide has ECS boundary warning
+# 5. Check EKS auto-heal guide has ECS boundary warning
 $eksContent = Get-Content 'docs/production/10_EKS_AUTO_HEAL_AND_ROLLBACK_HANDHOLDING.md' -Raw -ErrorAction SilentlyContinue
 if ($eksContent -notmatch 'ECS-only Lambda code is not wired to EKS alarms') {
-    Write-Host 'EKS auto-heal guide missing ECS boundary warning'
-    exit 1
+    Fail 'EKS auto-heal guide missing ECS boundary warning'
 }
 
-# 4. Check ECS auto-heal guide has EKS boundary warning
+# 6. Check ECS auto-heal guide has EKS boundary warning
 $ecsContent = Get-Content 'docs/production/09_AUTO_HEAL_AND_ROLLBACK_LAMBDA_PATH.md' -Raw -ErrorAction SilentlyContinue
 if ($ecsContent -notmatch 'Do not wire this Lambda to EKS alarms') {
-    Write-Host 'ECS auto-heal guide missing EKS boundary warning'
-    exit 1
+    Fail 'ECS auto-heal guide missing EKS boundary warning'
 }
 
-# 5. Check deleted module/lambda folders don't exist
+# 7. Check deleted module/lambda folders do not exist
 if ((Test-Path 'infra/terraform/modules') -or (Test-Path 'infra/terraform/lambda')) {
-    Write-Host 'Deleted Terraform module/lambda folders should not exist'
-    exit 1
+    Fail 'Deleted Terraform module/lambda folders should not exist'
 }
 
-# 6. Check cloud guides have "Cost Pause / Resume" section
+# 8. Check cloud guides have "Cost Pause / Resume" section
 # Only staging and production guides create cloud resources
 $missingCost = Get-ChildItem 'docs/staging/*.md','docs/production/*.md' -ErrorAction SilentlyContinue | Where-Object {
     (Select-String -Path $_.FullName -Pattern 'Cost Pause / Resume' -Quiet) -eq $null
 }
 if ($missingCost) {
-    Write-Host 'Cloud guide missing Cost Pause / Resume section'
-    exit 1
+    Fail 'Cloud guide missing Cost Pause / Resume section'
 }
 
-# 7-9. Check 99_DOC_ORDER.md has correct ordering
-$docOrder = Get-Content 'docs/99_DOC_ORDER.md' -ErrorAction SilentlyContinue | Out-String
-if ($docOrder -notmatch '00_CLOUD_COST_CONTROL') {
-    exit 1
+# 9. Check 99_DOC_ORDER.md has key staging gates
+if ($docOrderRaw -notmatch '00_CLOUD_COST_CONTROL') {
+    Fail 'docs/99_DOC_ORDER.md missing 00_CLOUD_COST_CONTROL'
 }
-if ($docOrder -notmatch '02_TERRAFORM_FROM_EMPTY_MAIN') {
-    exit 1
+if ($docOrderRaw -notmatch '02_TERRAFORM_FROM_EMPTY_MAIN') {
+    Fail 'docs/99_DOC_ORDER.md missing 02_TERRAFORM_FROM_EMPTY_MAIN'
 }
-if ($docOrder -notmatch '13_TERRAFORM_PARAMETERS') {
-    exit 1
+if ($docOrderRaw -notmatch '03_TERRAFORM_VPC') {
+    Fail 'docs/99_DOC_ORDER.md missing 03_TERRAFORM_VPC'
+}
+if ($docOrderRaw -notmatch '04_TERRAFORM_PARAMETERS') {
+    Fail 'docs/99_DOC_ORDER.md missing 04_TERRAFORM_PARAMETERS'
 }
 
 exit 0
