@@ -22,6 +22,7 @@ if (-not $docOrderRaw) {
 }
 
 $orderedGuideMatches = [regex]::Matches($docOrderRaw, '`([^`]+\.md)`')
+$orderedGuides = @()
 foreach ($match in $orderedGuideMatches) {
     $relative = $match.Groups[1].Value
     if ($relative -like 'docs/*') {
@@ -29,10 +30,19 @@ foreach ($match in $orderedGuideMatches) {
     } else {
         $candidate = Join-Path 'docs' $relative
     }
+    $orderedGuides += ($candidate -replace '\\', '/')
 
     if (-not (Test-Path $candidate)) {
         Fail "Guide listed in docs/99_DOC_ORDER.md does not exist: $candidate"
     }
+}
+
+$actualGuides = Get-ChildItem 'docs' -Recurse -File -Filter '*.md' | ForEach-Object {
+    $_.FullName.Substring($root.Length + 1) -replace '\\', '/'
+}
+$unlistedGuides = $actualGuides | Where-Object { $_ -notin $orderedGuides }
+if ($unlistedGuides) {
+    Fail "Guide file is missing from docs/99_DOC_ORDER.md: $($unlistedGuides -join ', ')"
 }
 
 # 2. Check relative Markdown links resolve
