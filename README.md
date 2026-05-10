@@ -23,8 +23,8 @@ Read these first:
 
 | Folder | Purpose |
 |---|---|
-| [`docs/local-dev/`](docs/local-dev) | Local backend, frontend, database, model, Makefile, Docker Compose, and test guides |
-| [`docs/product/`](docs/product) | Patient, doctor, admin, research, privacy, XAI, lab, OCR, training pipeline, dashboard, and mobile guides |
+| [`docs/local-dev/`](docs/local-dev) | Local backend, frontend, frontend SEO, database, model, Makefile, Docker Compose, and test guides |
+| [`docs/product/`](docs/product) | Patient, doctor, admin, research, privacy, XAI, role-based RAG agents, admin market research, public SEO reference, lab, OCR, training pipeline, dashboard, and mobile guides |
 | [`docs/staging/`](docs/staging) | Docker, Terraform from scratch, storage, secrets, database, events, security, observability, Kubernetes, EKS dev, ALB Ingress, CI/CD, staging promotion, and Power BI |
 | [`docs/production/`](docs/production) | Production-style cloud, EKS, ECS alternatives, release strategies, EKS/ECS healing paths, AppConfig, cache, database, reliability, cost, and fairness operations |
 | [`docs/reference/`](docs/reference) | Roadmap, requirements, recovery notes, 3D, agentic XAI, and mobile reference |
@@ -50,6 +50,24 @@ docs/staging/12_POWERBI_EMBEDDED_ANALYTICS_HANDHOLDING.md
 ```
 
 It is for admin, doctor, research, model, image-quality, consent, lab-result, and operations analytics. It is not the patient/customer dashboard.
+
+Public SEO and education pages belong in:
+
+```text
+docs/local-dev/10_FRONTEND_SEO_HANDHOLDING.md
+```
+
+Use `docs/product/SEO_AND_PUBLIC_PAGES_HANDHOLDING.md` only as the product reference companion. Build SEO after the customer dashboard and privacy/consent workflows are clear, but before staging or production deployment. SEO is only for public education and marketing pages, never private patient, doctor, admin, research, analytics, lesion, lab-result, or report pages.
+
+Role-separated LLM/RAG agents belong in:
+
+```text
+docs/product/14_LLM_RAG_AGENT_BOUNDARIES_HANDHOLDING.md
+docs/product/15_ADMIN_MARKET_RESEARCH_RAG_HANDHOLDING.md
+docs/product/16_ROLE_BASED_EVOLVING_AGENTS_HANDHOLDING.md
+```
+
+Clinical explanations, admin market research, doctor workflow support, customer education, and research/fairness summaries must use separate data boundaries and approval rules.
 
 ## Current Rule
 
