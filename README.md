@@ -83,7 +83,7 @@ Before creating cloud resources, read:
 docs/staging/00_CLOUD_COST_CONTROL_HANDHOLDING.md
 ```
 
-Daily cloud controls from the repo root:
+After `docs/staging/00_CLOUD_COST_CONTROL_HANDHOLDING.md` creates `infra/terraform/Makefile`, daily cloud controls run from the repo root:
 
 ```powershell
 make cloud-status ENV=dev
