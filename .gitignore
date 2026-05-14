@@ -59,6 +59,7 @@ data/
 *.local
 .env.production
 AGENTS.md
+tools/
 
 # Graphify knowledge graph outputs
 graphify-out/
