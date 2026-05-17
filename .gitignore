@@ -33,6 +33,7 @@ Skin_Lesion_Classification_frontend/
 Skin_Lesion_XAI_research/
 .vscode/
 .idea/
+.hermes/
 *.swp
 *.swo
 .DS_Store
