@@ -34,6 +34,40 @@ Skin_Lesion_Classification_backend
 
 Every file path in this guide is relative to `Skin_Lesion_Classification_backend`.
 
+## Local Backend Server Rule
+
+When a guide starts Uvicorn, use two PowerShell terminals:
+
+- Terminal 1 runs the backend server and stays open.
+- Terminal 2 runs `curl.exe` checks.
+
+Start Uvicorn only from this exact directory:
+
+```text
+C:\Users\saiyu\Desktop\projects\KI_projects\Skin_Lesion_GRADCAM_Classification\Skin_Lesion_Classification_backend
+```
+
+Use the backend virtual environment's Python executable:
+
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+When you are done with a manual server check, return to Terminal 1 and press:
+
+```text
+Ctrl+C
+```
+
+Expected:
+
+```text
+INFO:     Shutting down
+INFO:     Application shutdown complete.
+```
+
+Why: leaving an old Uvicorn process running can make later guides call a stale app that does not include newly added routes.
+
 ## Repo And File Map
 
 - Main workspace: `C:\Users\saiyu\Desktop\projects\KI_projects\Skin_Lesion_GRADCAM_Classification`
@@ -193,14 +227,14 @@ Run:
 ```powershell
 .\.venv\Scripts\Activate.ps1
 pytest
-uvicorn app.main:app --reload
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 What this does:
 
 - `.\.venv\Scripts\Activate.ps1` makes this terminal use the backend virtual environment.
 - `pytest` runs the backend tests.
-- `uvicorn app.main:app --reload` starts the FastAPI app from `app/main.py` and reloads when files change.
+- `.\.venv\Scripts\python.exe -m uvicorn ... --port 8000` starts the FastAPI app through the backend virtual environment, from `app/main.py`, and reloads when files change.
 
 If `pytest` is not recognized, run the same test through the backend virtual environment directly:
 
@@ -211,7 +245,7 @@ If `pytest` is not recognized, run the same test through the backend virtual env
 In another terminal:
 
 ```powershell
-curl http://localhost:8000/health
+curl.exe http://127.0.0.1:8000/health
 ```
 
 **What this does:** sends an HTTP GET request to the running FastAPI server's health endpoint. This proves the route is registered and uvicorn is responding to external traffic, not just the in-process test client.
@@ -223,6 +257,23 @@ Expected:
 ```
 
 **What this confirms:** the JSON response matches the contract defined in `test_health.py`. If the response is empty or returns a connection error, check the uvicorn terminal for errors.
+
+If you are continuing to Step 4 now, keep this Uvicorn terminal running. Step 4 uses the same server for `/api/v1/ready`.
+
+When all manual checks in this guide are finished, go back to the terminal running Uvicorn and press:
+
+```text
+Ctrl+C
+```
+
+Expected:
+
+```text
+INFO:     Shutting down
+INFO:     Application shutdown complete.
+```
+
+**What this does:** stops the local backend server so it does not keep using port `8000` in the background.
 
 ## Step 4: Add API Versioning
 
@@ -324,16 +375,16 @@ Run:
 ```powershell
 .\.venv\Scripts\Activate.ps1
 pytest
-curl http://localhost:8000/api/v1/ready
+curl.exe http://127.0.0.1:8000/api/v1/ready
 ```
 
-**What these verify:** `.\.venv\Scripts\Activate.ps1` makes `pytest` available in this PowerShell terminal. `pytest` runs both `test_health_returns_ok` and `test_ready_returns_ready`. `curl` confirms the versioned route works through the real uvicorn server, not just in the test client.
+**What these verify:** `.\.venv\Scripts\Activate.ps1` makes `pytest` available in this PowerShell terminal. `pytest` runs both `test_health_returns_ok` and `test_ready_returns_ready`. `curl.exe` confirms the versioned route works through the real uvicorn server, not just in the test client.
 
 If `pytest` is not recognized, run:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest
-curl http://localhost:8000/api/v1/ready
+curl.exe http://127.0.0.1:8000/api/v1/ready
 ```
 
 ## Step 5: Stop Point
@@ -344,8 +395,8 @@ Do not add database, Docker, Kubernetes, or AWS until this passes:
 cd C:\Users\saiyu\Desktop\projects\KI_projects\Skin_Lesion_GRADCAM_Classification\Skin_Lesion_Classification_backend
 .\.venv\Scripts\Activate.ps1
 pytest
-curl http://localhost:8000/health
-curl http://localhost:8000/api/v1/ready
+curl.exe http://127.0.0.1:8000/health
+curl.exe http://127.0.0.1:8000/api/v1/ready
 ```
 
 **What this gate means:** all three commands must return successful results before moving to the next guide. `pytest` confirms the code is tested. The two `curl` commands confirm the server runs correctly outside the test environment. Only when all three pass is the API contract stable enough to layer infrastructure on top.
