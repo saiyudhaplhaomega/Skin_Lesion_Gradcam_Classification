@@ -28,6 +28,7 @@ npm-debug.log*
 
 # Local private docs and nested standalone repos.
 docs/
+Presentation/
 Skin_Lesion_Classification_backend/
 Skin_Lesion_Classification_frontend/
 Skin_Lesion_XAI_research/
