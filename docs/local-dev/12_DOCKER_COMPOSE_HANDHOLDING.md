@@ -156,11 +156,13 @@ Paste this `redis:` block under the top-level `services:` section, aligned with 
   redis:
     image: redis:7-alpine
     container_name: skin-lesion-redis-local
-    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru --requirepass redislocal
+    env_file:
+      - .env.local
+    command: sh -c 'redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru --requirepass "$$REDIS_PASSWORD"'
     ports:
       - "6379:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "redislocal", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -171,14 +173,15 @@ What this Redis service does:
 - Uses a lightweight Redis image.
 - Caps memory at `256mb`.
 - Uses `allkeys-lru` eviction for volatile cache behavior.
-- Requires the local password `redislocal`.
+- Requires the local Redis password from `infra/compose/.env.local`.
 - Adds a healthcheck based on `redis-cli ping`.
 
 Test Redis is up:
 
 ```powershell
 docker compose -f infra/compose/docker-compose.local.yml up postgres redis -d
-docker exec skin-lesion-redis-local redis-cli -a redislocal ping
+$redisPassword = (Get-Content infra/compose/.env.local | Where-Object { $_ -like "REDIS_PASSWORD=*" }).Split("=", 2)[1]
+docker exec skin-lesion-redis-local redis-cli -a $redisPassword ping
 ```
 
 What this does:
@@ -206,7 +209,8 @@ POSTGRES_DB=skin_lesion
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=postgres
 DATABASE_URL=postgresql+psycopg://postgres:postgres@postgres:5432/skin_lesion
-REDIS_URL=redis://:redislocal@redis:6379/0
+REDIS_PASSWORD=<choose-a-local-redis-password>
+REDIS_URL=redis://:<choose-a-local-redis-password>@redis:6379/0
 ENVIRONMENT=local
 ```
 
@@ -215,6 +219,9 @@ What this env file does:
 - Stores local database credentials for Compose.
 - Uses `postgres` and `redis` as hostnames because containers talk by service name.
 - Keeps local environment values out of the YAML service definitions.
+- Keeps the Redis password out of committed Compose files.
+
+Replace both `<choose-a-local-redis-password>` values with the same local-only password before running Redis. Do not commit `infra/compose/.env.local`.
 
 Add to `.gitignore` (or `infra/compose/.gitignore`):
 
@@ -458,11 +465,13 @@ services:
   redis:
     image: redis:7-alpine
     container_name: skin-lesion-redis-local
-    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru --requirepass redislocal
+    env_file:
+      - .env.local
+    command: sh -c 'redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru --requirepass "$$REDIS_PASSWORD"'
     ports:
       - "6379:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "redislocal", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping"]
       interval: 10s
       timeout: 5s
       retries: 5
