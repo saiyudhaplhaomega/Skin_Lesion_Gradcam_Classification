@@ -233,6 +233,66 @@ Add to `.gitignore` (or `infra/compose/.gitignore`):
 
 What this ignore rule does: prevents local, staging, and production environment files from being committed.
 
+## Step 4A: Secret Hygiene Check
+
+Before you commit any Compose or Redis change, confirm that local secrets are ignored and no password value was pasted into a tracked file.
+
+Run from the main workspace:
+
+```powershell
+cd C:\Users\saiyu\Desktop\projects\KI_projects\Skin_Lesion_GRADCAM_Classification
+git check-ignore -v infra/compose/.env.local
+git status --short --ignored infra/compose
+```
+
+What this checks:
+
+- `git check-ignore -v infra/compose/.env.local` proves the local env file is protected by `.gitignore`.
+- `git status --short --ignored infra/compose` shows the Compose YAML as trackable and `.env.local` as ignored.
+
+Expected result:
+
+```text
+.gitignore:<line>:.env.local    infra/compose/.env.local
+!! infra/compose/.env.local
+```
+
+What this means: `.env.local` is present on your machine but will not be committed.
+
+Now check that tracked runtime files use placeholders or environment variables instead of real values:
+
+```powershell
+git grep -n "REDIS_PASSWORD=.*[^>]" -- . ":!docs"
+git grep -n "redis://:.*@redis" -- . ":!docs"
+git grep -n "requirepass [A-Za-z0-9]" -- . ":!docs"
+```
+
+Expected result:
+
+```text
+No output.
+```
+
+What this confirms: no tracked runtime file contains a literal Redis password, a literal Redis URL password, or a `requirepass` command with a hard-coded value.
+
+In documentation, use placeholders like:
+
+```text
+<choose-a-local-redis-password>
+YOUR_AUTH_TOKEN
+```
+
+Do not use a real password, copied local password, cloud token, API key, patient credential, or anything you would need to rotate if GitHub displayed it.
+
+If a password-shaped value is accidentally committed or pushed:
+
+1. Rotate or replace that value immediately.
+2. Remove it from the current tracked files.
+3. Commit and push the fix.
+4. If the value was real or reused anywhere, rewrite Git history and force-push only after explicitly deciding to do that, because rewriting `main` affects everyone using the repo.
+
+Why: ignored env files protect future commits, but they do not remove values already committed to history. Treat pushed secrets as exposed.
+
 ## Step 5: Add Backend Container
 
 This step has two file locations:
