@@ -66,3 +66,9 @@ tools/
 # Graphify knowledge graph outputs
 graphify-out/
 .graphify-deps/
+
+
+# prevent stgs .env
+.env.local
+.env.staging
+.env.prod

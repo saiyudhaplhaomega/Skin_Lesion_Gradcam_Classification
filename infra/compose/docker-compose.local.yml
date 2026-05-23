@@ -1,0 +1,43 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: skin-lesion-postgres-local
+    env_file:
+      - .env.local
+    ports:
+      - "5432:5432"
+    volumes:
+      - skin_lesion_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d skin_lesion"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: skin-lesion-redis-local
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru --requirepass redislocal
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "redislocal", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    image: skin-lesion-backend:local
+    container_name: skin-lesion-backend-local
+    env_file:
+      - .env.local
+    ports:
+      - "8000:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  skin_lesion_postgres_data:
