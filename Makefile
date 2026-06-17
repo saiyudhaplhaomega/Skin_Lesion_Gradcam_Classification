@@ -10,6 +10,7 @@ FRONTEND_DIR := Skin_Lesion_Classification_frontend
 RESEARCH_DIR := Skin_Lesion_XAI_research
 TERRAFORM_DIR := infra/terraform
 ENV ?= dev
+CONFIRM_DESTROY ?= NO
 CONFIRM_PROD ?= NO
 
 help:
@@ -56,7 +57,7 @@ research-help:
 	$(MAKE) -C $(RESEARCH_DIR) help
 
 cloud-status:
-	$(MAKE) -C $(TERRAFORM_DIR) status ENV=$(ENV)
+	$(MAKE) -C $(TERRAFORM_DIR) status ENV=$(ENV) CONFIRM_PROD=$(CONFIRM_PROD)
 
 cloud-start:
 	$(MAKE) -C $(TERRAFORM_DIR) start ENV=$(ENV) CONFIRM_PROD=$(CONFIRM_PROD)

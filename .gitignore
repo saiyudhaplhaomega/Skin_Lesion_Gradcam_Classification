@@ -25,6 +25,10 @@ npm-debug.log*
 .terraform/
 .terraform.lock.hcl
 *.tfvars
+!infra/terraform/env/
+!infra/terraform/env/dev.tfvars
+!infra/terraform/env/staging.tfvars
+!infra/terraform/env/prod.tfvars
 
 # Local private docs and nested standalone repos.
 docs/
