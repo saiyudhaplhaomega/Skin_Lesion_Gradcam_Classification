@@ -122,7 +122,51 @@ graphify-out
 
 Why: do not copy local environments, caches, or model weights into every image.
 
-## Step 3: Build
+## Step 3: Confirm Docker Desktop Is Running
+
+Run from the backend repo:
+
+```powershell
+cd C:\Users\saiyu\Desktop\projects\KI_projects\Skin_Lesion_GRADCAM_Classification\Skin_Lesion_Classification_backend
+docker version
+```
+
+**What this does:** asks the Docker CLI and Docker engine for their versions. The CLI can be installed even when the Docker engine is stopped, so this check confirms both pieces are ready.
+
+Expected result:
+
+```text
+Client version prints.
+Server version prints.
+```
+
+**What this means:** Docker Desktop is running and the Linux container engine is reachable.
+
+If the command prints only the client version and then says it cannot connect to Docker, Docker Desktop is installed but not running:
+
+```text
+failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine
+```
+
+Open Docker Desktop from the Start menu, wait until it says the engine is running, then rerun:
+
+```powershell
+docker version
+```
+
+If you are using an elevated Administrator terminal and need to start the Windows service manually, run:
+
+```powershell
+Start-Service com.docker.service
+```
+
+**What this does:** starts the Docker Desktop Windows service. This may require Administrator permissions. Starting the service is not always enough by itself; Docker Desktop may still need to be opened so the Linux engine starts.
+
+Do not run `docker build` until `docker version` shows both client and server information.
+
+Why: the Docker build command talks to the Docker engine. If Docker Desktop is not running, the Dockerfile can be correct and the build will still fail before reading it.
+
+## Step 4: Build
 
 ```powershell
 cd Skin_Lesion_Classification_backend
@@ -144,9 +188,9 @@ docker images skin-lesion-backend
 
 Expected result: Docker lists `skin-lesion-backend:local`.
 
-Important: this image can be large because the current `requirements.txt` installs Torch, TorchVision, MLflow, OpenCV, Grad-CAM, and other ML packages. A first build can take several minutes.
+Important: this image is large because the current `requirements.txt` installs Torch, TorchVision, MLflow, OpenCV, Grad-CAM, and other ML packages. On this Windows Docker Desktop workspace, the first successful build produced an image with about 10.8 GB disk usage and 3.62 GB content size. A first build can take several minutes.
 
-## Step 4: Run
+## Step 5: Run
 
 ```powershell
 docker run --rm -p 8080:8080 skin-lesion-backend:local
@@ -161,10 +205,10 @@ docker run --rm -p 8080:8080 skin-lesion-backend:local
 In another terminal:
 
 ```powershell
-Invoke-RestMethod http://localhost:8080/health
+Invoke-RestMethod http://127.0.0.1:8080/health
 ```
 
-**What this does:** sends an HTTP GET request to the health check endpoint on the running container. If the app started correctly, it returns a `200 OK` response.
+**What this does:** sends an HTTP GET request to the health check endpoint on the running container. If the app started correctly, it returns a `200 OK` response. This guide uses `127.0.0.1` instead of `localhost` because Windows Docker Desktop can resolve `localhost` to IPv6 first and return an empty reply even when the container is healthy.
 
 Expected:
 
@@ -175,6 +219,26 @@ Expected:
 **What this result means:** the FastAPI app is running inside the container and responding to HTTP requests. The health check endpoint is working correctly.
 
 Windows PowerShell note: use `Invoke-RestMethod` or `curl.exe`, not plain `curl`. In Windows PowerShell, `curl` can be an alias for `Invoke-WebRequest` and may fail with an Internet Explorer parsing error.
+
+If `http://localhost:8080/health` gives this error:
+
+```text
+The underlying connection was closed: The connection was closed unexpectedly.
+```
+
+or `curl.exe` reports:
+
+```text
+Empty reply from server
+```
+
+rerun the health check with the IPv4 loopback address:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8080/health
+```
+
+**What this does:** bypasses the `localhost` name resolution path and connects directly to the IPv4 loopback address that Docker Desktop publishes.
 
 ## Stop Point
 
