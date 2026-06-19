@@ -795,6 +795,17 @@ What this command does:
 - It creates an instance to confirm the class can be constructed.
 - It prints a success message if the import and constructor work.
 
+### Learning: when this stub becomes a real vector store
+
+`retrieve_policy_context` returns hard-coded strings today, and the comment says so: "In a real implementation this would query a medical policy vector store." That stub is the correct first move because it lets the rest of the explanation flow be built before any retrieval exists. When you replace it with a real medical policy store, the same retrieval engineering that applies to the market research RAG applies here, scaled down for a small, structured corpus. The full catalog is `reference/09_SYSTEM_DESIGN_PATTERNS.md` Family 13.
+
+- **Chunk by policy clause, not by token count.** The policy corpus is short and structured, so one clause per chunk keeps retrieval precise (Family 13.1).
+- **Same embedding model for index and query**, dimension in the 768 to 1536 range (Family 13.2), and store vectors in pgvector (Family 13.3). Note the vector index goes on a pgvector-capable Postgres (Aurora PostgreSQL or RDS), not on Aurora DSQL, which does not support the pgvector extension. Keep this clinical index physically separate from the doctor, customer, research, and admin indexes (`product/13`, and `reference/09` 12.3).
+- **Hybrid search helps** when a query names an exact CAM method or Fitzpatrick type that vector search would blur (Family 13.4).
+- **Prefer an honest refusal over a weak answer.** If retrieval returns nothing relevant, the explanation should say it does not have enough information rather than guess. That grounding rule lives in the prompts in `product/06` and is the cheapest defense against hallucination (Family 13.11, and `reference/09` 12.2 and 12.6).
+
+On the observability and cost side, this guide already gives you the levers. The tracing service and the safety-specific metrics (Step 6 and Step 16) are exactly the LangSmith-style traceability production RAG needs: the exact prompt sent, the response, token counts, and latency per step. Add the cost levers from Family 13.12 on top: cache repeated query embeddings and retrieved context (ties to `staging/20_ELASTICACHE_REDIS`), enforce a per-request token budget, and keep the embedding dimension modest. Trace token counts per step so you can see where RAG spend actually goes.
+
 ## Step 8: Add ADK XAI Orchestrator Service
 
 Create:

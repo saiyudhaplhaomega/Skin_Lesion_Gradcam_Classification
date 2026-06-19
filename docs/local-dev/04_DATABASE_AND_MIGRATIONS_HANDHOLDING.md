@@ -58,6 +58,8 @@ Keep the local schema conservative:
 
 Why: the app is planned for Aurora DSQL in cloud, so the local database should teach portable PostgreSQL-compatible habits instead of locking the backend to one local-only feature.
 
+Note: the `pgvector` extension used later by the RAG features is the clearest example of this rule. It is fine to use it locally, but it is not part of your core transactional schema and it does not run on DSQL, so plan the vector index as a separate pgvector-capable Postgres (or OpenSearch) rather than something your main DSQL-bound migrations depend on. See `reference/09_SYSTEM_DESIGN_PATTERNS.md` Family 13.3.
+
 ## Step 0: Start Local Postgres
 
 Alembic must connect to a real database before it can autogenerate or apply migrations. Start local Postgres before running any `alembic revision --autogenerate`, `alembic upgrade head`, or `alembic current` command.
