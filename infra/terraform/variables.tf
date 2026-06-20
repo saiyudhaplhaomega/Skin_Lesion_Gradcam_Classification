@@ -27,3 +27,33 @@ variable "aws_account_id" {
   type        = string
   default     = "YOUR_ACCOUNT_ID"
 }
+
+variable "alert_email" {
+  description = "Email address for staging alerts. Use a placeholder until you intentionally subscribe."
+  type        = string
+  default     = "replace-me@example.com"
+}
+
+variable "log_retention_days" {
+  description = "CloudWatch log retention for staging-style logs"
+  type        = number
+  default     = 30
+}
+
+variable "waf_rate_limit" {
+  description = "Requests per 5-minute window per IP before WAF rate limiting"
+  type        = number
+  default     = 1000
+}
+
+variable "enable_security_observability" {
+  description = "Enable Guide 16 paid/security observability controls after explicit review"
+  type        = bool
+  default     = false
+}
+
+variable "enable_guardduty" {
+  description = "Enable GuardDuty detector after reviewing cost and shutdown behavior"
+  type        = bool
+  default     = false
+}

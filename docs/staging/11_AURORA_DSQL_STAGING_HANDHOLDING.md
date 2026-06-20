@@ -12,6 +12,30 @@ local Postgres for learning -> Aurora DSQL for cloud staging -> Aurora PostgreSQ
 
 Aurora DSQL is the planned cloud database target for this project. Aurora PostgreSQL is not the default plan; it is the fallback if DSQL blocks learning, compatibility, availability, or cost.
 
+## Current Project Implementation
+
+This guide is intentionally documented but not applied yet.
+
+Current repo state:
+
+```text
+Guide 10 event infrastructure exists in Terraform.
+No aws_dsql_cluster resource has been committed.
+No Aurora PostgreSQL fallback has been committed.
+No live DSQL cluster has been created by this task.
+```
+
+Why: checking Terraform provider schema currently needs AWS/backend credentials in this workspace, and Aurora DSQL creates real hourly cost. The next DSQL step needs an explicit AWS SSO/console/CLI moment from you before I create or apply anything.
+
+When you are ready, I will ask before running any of these:
+
+```powershell
+aws sso login
+aws dsql create-cluster
+terraform apply -var-file="env/staging.tfvars"
+kubectl config updates for staging
+```
+
 > **One exception, decided in advance: the RAG vector index.** When you build the RAG features (`product/07`, `product/14`, `product/15`), the vector index needs the `pgvector` extension, and DSQL's extension support does not include it as far as is known. That is not a DSQL "blocker" to work around; it is an expected split. Transactional data stays on DSQL, and the vector index lives on a pgvector-capable Postgres (Aurora PostgreSQL or a small dedicated RDS PostgreSQL) in the same VPC, or on OpenSearch Serverless vector search. See `reference/09_SYSTEM_DESIGN_PATTERNS.md` Family 13.3. While you are here, it is worth confirming exactly which extensions DSQL does and does not support and noting it, since `local-dev/04` deliberately avoids extensions until this guide confirms them.
 
 ## Goal
@@ -159,7 +183,7 @@ Check:
 cd infra/terraform
 terraform fmt
 terraform validate
-terraform plan
+terraform plan -var-file="env/staging.tfvars"
 ```
 
 **What these commands do:** `terraform fmt` formats the new `.tf` file. `terraform validate` checks the resource syntax. `terraform plan` shows what will be created - should show exactly one `aws_dsql_cluster.main` and no RDS or Aurora PostgreSQL resources.
@@ -182,6 +206,13 @@ aws dsql create-cluster --region us-east-1 --tags Name=skin-lesion-staging-dsql,
 **What this does:** creates the DSQL cluster directly via AWS CLI when the Terraform provider does not support `aws_dsql_cluster` yet. The cluster starts billing immediately at approximately $3.50 per hour - disable deletion protection and destroy it before stopping for the day.
 
 Why: Terraform is preferred for repeatable cloud setup, but the project decision is DSQL itself, not a specific tool shortcut.
+
+Beginner stop point for this repo:
+
+```text
+Do not add aws_dsql_cluster until terraform provider support is confirmed in an authenticated AWS/Terraform session.
+Do not use Aurora PostgreSQL fallback unless the failed DSQL check is written in docs/reference/04_RECOVERY_AND_SOURCE_NOTES.md.
+```
 
 ## Step 3: Create DSQL PrivateLink Endpoints
 

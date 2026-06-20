@@ -4,6 +4,38 @@ Use this after the app can run in a staging-like environment.
 
 This guide integrates the ideas from the old `cloudwatch-alarms`, `vpc-flow-logs`, `cloudtrail`, `guardduty`, `waf`, and `cognito` modules.
 
+## Current Project Implementation
+
+Guide 16 now has a Terraform baseline, with costly controls gated by variables.
+
+Files created or edited:
+
+```text
+infra/terraform/security_observability.tf
+infra/terraform/variables.tf
+infra/terraform/env/staging.tfvars
+infra/terraform/outputs.tf
+```
+
+Implemented now:
+
+```text
+CloudWatch alarms for training queue depth and DLQ depth
+Optional VPC Flow Logs resources behind enable_security_observability
+Optional alert email SNS subscription behind enable_security_observability
+Optional GuardDuty detector and high-severity SNS rule behind enable_guardduty
+```
+
+Still intentionally gated:
+
+```text
+CloudTrail full trail and bucket policy
+WAF attached to the internet-facing ALB
+Cognito user pools
+```
+
+Why: those controls need either live AWS identity, an ALB ARN, or a real alert recipient. I will ask before enabling them because they can create ongoing charges or require console/SSO confirmation.
+
 ## Command Location
 
 Run commands from the main workspace first:
@@ -50,6 +82,8 @@ LOG_RETENTION_DAYS=30
 WAF_RATE_LIMIT=1000
 PATIENT_USER_POOL=skin-lesion-patients-staging
 DOCTOR_USER_POOL=skin-lesion-doctors-staging
+ENABLE_SECURITY_OBSERVABILITY=false until you intentionally enable paid/staging controls
+ENABLE_GUARDDUTY=false until you intentionally enable GuardDuty
 ```
 
 **What these parameters mean:**
@@ -78,7 +112,8 @@ VPC flow log for the app VPC
 Check:
 
 ```powershell
-terraform plan
+cd C:\Users\saiyu\Desktop\projects\KI_projects\Skin_Lesion_GRADCAM_Classification\infra\terraform
+terraform plan -var-file="env/staging.tfvars"
 ```
 
 **What this does:** previews the CloudWatch log group and VPC flow log resource. The plan should show exactly two new resources at this step.
@@ -111,6 +146,15 @@ failed worker messages
 Use SNS for notifications.
 
 Do not attach auto-heal or auto-rollback Lambda actions yet.
+
+Current repo alarms:
+
+```text
+aws_cloudwatch_metric_alarm.training_queue_depth
+aws_cloudwatch_metric_alarm.training_dlq_depth
+```
+
+Why: the training workflow now has a queue and DLQ in Terraform, so queue backlog is the first concrete reliability signal to alarm on.
 
 ## Step 3: CloudTrail
 
@@ -161,6 +205,14 @@ GuardDuty can create ongoing charges. Enable it intentionally and include it in 
 ```
 
 **What this means:** GuardDuty charges based on the volume of CloudTrail events and VPC flow logs it analyzes. For a dev learning account with low traffic this is small (a few dollars per month), but it accumulates. Add `aws guardduty disable-detector` to the daily shutdown checklist if cost is a concern.
+
+Current repo setting:
+
+```text
+enable_guardduty = false
+```
+
+Change it only in `infra/terraform/env/staging.tfvars` after reviewing the plan and confirming cost.
 
 ## Step 5: WAF
 

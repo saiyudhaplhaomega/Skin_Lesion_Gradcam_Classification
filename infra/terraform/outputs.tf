@@ -47,3 +47,23 @@ output "eks_cluster_endpoint" {
   description = "API endpoint of the EKS cluster created in guide 08"
   value       = module.eks.cluster_endpoint
 }
+
+output "notifications_topic_arn" {
+  description = "SNS topic used by staging notifications and alarms"
+  value       = aws_sns_topic.notifications.arn
+}
+
+output "training_queue_url" {
+  description = "SQS FIFO queue URL for training workflow events"
+  value       = aws_sqs_queue.training_workflow.url
+}
+
+output "training_dlq_url" {
+  description = "SQS FIFO dead-letter queue URL for failed training workflow messages"
+  value       = aws_sqs_queue.training_workflow_dlq.url
+}
+
+output "training_events_bus_name" {
+  description = "EventBridge bus for training workflow events"
+  value       = aws_cloudwatch_event_bus.training.name
+}
