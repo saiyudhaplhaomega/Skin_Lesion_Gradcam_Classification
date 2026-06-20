@@ -2,6 +2,30 @@
 
 Use this after Docker works.
 
+## Cross-Reference: Guide 06 Already Created The Same Manifests
+
+If you completed `docs/staging/06_KUBERNETES_AFTER_DOCKER.md`, the `infra/k8s/dev/` directory already contains `namespace.yaml`, `deployment.yaml`, and `service.yaml`. This guide is an alternate path that uses a slightly different deployment pattern:
+
+| Aspect | Guide 06 pattern | Guide 07 pattern |
+|--------|------------------|------------------|
+| Image pull | Local Docker cache (default) | `imagePullPolicy: Never` (explicit) |
+| Probes | `/health` port 8080, with timing | `/health` port 8080, with timing |
+| Service | ClusterIP port 8080:8080 | ClusterIP port 8080:8080 |
+| Resource limits | CPU/memory requests + limits | (not specified in this guide) |
+
+Both guides target the same `docker-desktop` Kubernetes cluster and produce a working backend pod reachable via `kubectl port-forward`. Pick one and follow it.
+
+**Before starting Step 1 below, check whether the manifests already exist from guide 06:**
+
+```powershell
+Test-Path C:\Users\saiyu\Desktop\projects\KI_projects\Skin_Lesion_GRADCAM_Classification\infra\k8s\dev```
+
+If this returns `True`, the directory exists. You can:
+- **Option A** — Continue with guide 06's manifests as they are. Skip Steps 1-4 below and go directly to the Kubernetes Checks section.
+- **Option B** — Overwrite with this guide's slightly-different manifest versions. Follow Steps 1-4 below.
+
+If this returns `False`, the directory does not exist. Follow Steps 1-4 below to create it from scratch.
+
 ## Goal
 
 Run the backend container in local Kubernetes.

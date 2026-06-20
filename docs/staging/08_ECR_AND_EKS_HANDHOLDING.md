@@ -44,9 +44,27 @@ Replace `YOUR_ACCOUNT_ID` with your real AWS account ID before running AWS comma
 4. Deploy the same Kubernetes manifests with the ECR image.
 5. Check rollout.
 
+## Cross-Reference: ECR Was Already Created In Guide 05
+
+If you completed `docs/staging/05_TERRAFORM_STORAGE_SECRETS_AND_ECR_HANDHOLDING.md` and ran `terraform apply`, the ECR repository named `skin-lesion-backend-dev` already exists in account `526404916929`, region `us-east-1`. Guide 05 Step 6 created it via `aws_ecr_repository.backend`.
+
+**Before starting Step 1 below, run this to check whether the ECR repo already exists:**
+
+```powershell
+aws ecr describe-repositories --repository-names skin-lesion-backend-dev --region us-east-1 --profile skin-lesion-learning-dev
+```
+
+If the command prints a JSON block with `"repositoryName": "skin-lesion-backend-dev"`, the repo already exists. Skip Step 1 and go directly to Step 2 (Push Image).
+
+If the command returns `RepositoryNotFoundException`, follow Step 1 below to create it. (This happens when you completed guide 05 as plan-only without applying, or when you deliberately skipped guide 05 and started at guide 08.)
+
+This guide assumes the ECR repository name is `skin-lesion-backend-dev` and the region is `us-east-1` — both match what guide 05 created. If you are following guide 08 standalone (without guide 05), you can still use these values, but you should later add them to guide 05's `variables.tf` and `env/dev.tfvars` to keep both guides consistent.
+
 ## Step 1: Create ECR With Terraform At This Gate
 
 Do not add EKS first. Add ECR first because it is simpler.
+
+This step is only needed if the cross-reference check above returned `RepositoryNotFoundException`. If guide 05 already created the repo, skip this step entirely.
 
 Terraform resource shape:
 
