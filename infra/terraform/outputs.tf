@@ -37,3 +37,13 @@ output "jwt_secret_arn" {
   description = "ARN of the JWT secret"
   value       = aws_secretsmanager_secret.jwt_secret.arn
 }
+
+output "eks_cluster_name" {
+  description = "Name of the EKS cluster created in guide 08"
+  value       = module.eks.cluster_name
+}
+
+output "eks_cluster_endpoint" {
+  description = "API endpoint of the EKS cluster created in guide 08"
+  value       = module.eks.cluster_endpoint
+}

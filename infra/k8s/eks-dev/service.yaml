@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: skin-lesion-backend
+  namespace: skin-lesion-dev
+  labels:
+    app: skin-lesion-backend
+    environment: dev
+    platform: eks
+spec:
+  type: ClusterIP
+  selector:
+    app: skin-lesion-backend
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+      name: http

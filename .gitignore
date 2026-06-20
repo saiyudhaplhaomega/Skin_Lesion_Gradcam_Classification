@@ -23,6 +23,7 @@ npm-debug.log*
 *.tfstate
 *.tfstate.*
 .terraform/
+infra/terraform/.terraform-local/
 .terraform.lock.hcl
 !infra/terraform/.terraform.lock.hcl
 *.tfvars

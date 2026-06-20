@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: skin-lesion-backend
+  namespace: skin-lesion-dev
+  labels:
+    app: skin-lesion-backend
+    environment: dev
+    platform: eks
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: skin-lesion-backend
+  template:
+    metadata:
+      labels:
+        app: skin-lesion-backend
+        environment: dev
+        platform: eks
+    spec:
+      containers:
+        - name: skin-lesion-backend
+          image: 526404916929.dkr.ecr.us-east-1.amazonaws.com/skin-lesion-backend-dev:local
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 250m
+              memory: 1Gi
+            limits:
+              cpu: 1000m
+              memory: 2Gi
