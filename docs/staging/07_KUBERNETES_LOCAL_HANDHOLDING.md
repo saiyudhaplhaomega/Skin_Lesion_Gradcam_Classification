@@ -59,13 +59,21 @@ Run every `kubectl` command in this guide from the repo root.
 
 ## Step 1: Create Folder
 
-Create this folder:
+**Skip this step if you already created `infra/k8s/dev/` in guide 06.** Run `Test-Path` first:
+
+```powershell
+Test-Path C:\Users\saiyu\Desktop\projects\KI_projects\Skin_Lesion_GRADCAM_Classification\infra\k8s\dev
+```
+
+If the result is `True`, the folder exists. Skip this Step and continue to Step 2's `kubectl apply` command directly. If the result is `False`, create this folder:
 
 ```text
 infra/k8s/dev/
 ```
 
 ## Step 2: Namespace
+
+**Skip this step if you already created `infra/k8s/dev/namespace.yaml` in guide 06.** If it exists, jump directly to the `kubectl apply -f infra/k8s/dev/namespace.yaml` command below. Otherwise:
 
 Create `infra/k8s/dev/namespace.yaml`:
 
@@ -88,6 +96,8 @@ kubectl get namespace skin-lesion-dev
 **What these commands do:** `kubectl apply -f` reads the YAML file and creates the namespace in the cluster if it does not exist. `kubectl get namespace skin-lesion-dev` confirms the namespace was created and shows its status (should be `Active`).
 
 ## Step 3: Deployment
+
+**Skip this step if you already created `infra/k8s/dev/deployment.yaml` in guide 06.** If it exists, jump directly to the `kubectl apply -f infra/k8s/dev/deployment.yaml` command at the end of this Step. Otherwise, follow the instructions below to create the deployment manifest.
 
 Create `infra/k8s/dev/deployment.yaml`:
 
@@ -144,6 +154,8 @@ kubectl get pods -n skin-lesion-dev
 **What these commands do:** `kubectl apply -f` creates the Deployment in the `skin-lesion-dev` namespace. `kubectl get pods -n skin-lesion-dev` lists the pods in that namespace - the pod should go from `Pending` to `Running` as Kubernetes pulls the image and starts the container. If readiness fails, it stays in `0/1 Running` with the Ready column showing `0`.
 
 ## Step 4: Service
+
+**Skip this step if you already created `infra/k8s/dev/service.yaml` in guide 06.** If it exists, jump directly to the `kubectl apply -f infra/k8s/dev/service.yaml` command at the end of this Step. Otherwise, follow the instructions below to create the service manifest.
 
 Create `infra/k8s/dev/service.yaml`:
 
