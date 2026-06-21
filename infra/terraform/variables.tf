@@ -57,3 +57,40 @@ variable "enable_guardduty" {
   type        = bool
   default     = false
 }
+
+variable "enable_elasticache" {
+  description = "Enable Guide 20 ElastiCache Redis after cost and auth-token review"
+  type        = bool
+  default     = false
+}
+
+variable "redis_node_type" {
+  description = "ElastiCache node type for the optional Redis cluster"
+  type        = string
+  default     = "cache.t3.micro"
+}
+
+variable "redis_auth_token" {
+  description = "Redis AUTH token. Keep null until setting it through a secure local tfvars or secret workflow."
+  type        = string
+  default     = null
+  sensitive   = true
+}
+
+variable "enable_mlflow_server" {
+  description = "Enable Guide 21 MLflow EC2 and artifact bucket after cost review"
+  type        = bool
+  default     = false
+}
+
+variable "mlflow_ami_id" {
+  description = "AMI ID for the optional MLflow EC2 host. Set explicitly before enabling MLflow."
+  type        = string
+  default     = "ami-00000000000000000"
+}
+
+variable "mlflow_instance_type" {
+  description = "Instance type for the optional MLflow EC2 host"
+  type        = string
+  default     = "t3.small"
+}

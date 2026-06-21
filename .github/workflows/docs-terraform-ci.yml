@@ -1,0 +1,35 @@
+name: Docs and Terraform CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  docs-and-terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+
+      - name: Terraform fmt
+        working-directory: infra/terraform
+        run: terraform fmt -recursive -check
+
+      - name: Terraform init without remote backend
+        working-directory: infra/terraform
+        run: terraform init -backend=false -input=false
+
+      - name: Terraform validate
+        working-directory: infra/terraform
+        run: terraform validate
+
+      - name: Docs check
+        shell: pwsh
+        run: ./scripts/docs-validate.ps1

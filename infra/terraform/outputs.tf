@@ -67,3 +67,18 @@ output "training_events_bus_name" {
   description = "EventBridge bus for training workflow events"
   value       = aws_cloudwatch_event_bus.training.name
 }
+
+output "redis_primary_endpoint" {
+  description = "Primary endpoint for optional Guide 20 Redis. Null until enable_elasticache is true."
+  value       = try(aws_elasticache_replication_group.redis[0].primary_endpoint_address, null)
+}
+
+output "mlflow_tracking_uri" {
+  description = "Private tracking URI for optional Guide 21 MLflow. Null until enable_mlflow_server is true."
+  value       = try("http://${aws_instance.mlflow[0].private_ip}:5000", null)
+}
+
+output "mlflow_artifact_bucket" {
+  description = "Artifact bucket for optional Guide 21 MLflow. Null until enable_mlflow_server is true."
+  value       = try(aws_s3_bucket.mlflow_artifacts[0].id, null)
+}
