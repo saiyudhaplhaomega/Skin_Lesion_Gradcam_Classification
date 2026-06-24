@@ -100,3 +100,16 @@ variable "mlflow_instance_type" {
   type        = string
   default     = "t3.small"
 }
+
+# D7 - Aurora DSQL
+variable "enable_aurora_dsql" {
+  description = "Enable Aurora DSQL cluster (D7). Serverless, IAM-auth only. us-east-1 / us-east-2 only."
+  type        = bool
+  default     = false
+}
+
+variable "dsql_deletion_protection" {
+  description = "Enable deletion protection on the Aurora DSQL cluster. Always set to true in production."
+  type        = bool
+  default     = false
+}

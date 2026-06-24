@@ -82,3 +82,24 @@ output "mlflow_artifact_bucket" {
   description = "Artifact bucket for optional Guide 21 MLflow. Null until enable_mlflow_server is true."
   value       = try(aws_s3_bucket.mlflow_artifacts[0].id, null)
 }
+
+# D7 - Aurora DSQL outputs
+output "dsql_cluster_id" {
+  description = "Aurora DSQL cluster ID. Null until enable_aurora_dsql is true."
+  value       = try(module.aurora_dsql[0].cluster_id, null)
+}
+
+output "dsql_endpoint" {
+  description = "Aurora DSQL endpoint. Null until enable_aurora_dsql is true."
+  value       = try(module.aurora_dsql[0].endpoint, null)
+}
+
+output "dsql_ssm_endpoint_parameter" {
+  description = "SSM parameter path storing the DSQL endpoint."
+  value       = try(module.aurora_dsql[0].ssm_endpoint_parameter, null)
+}
+
+output "dsql_connect_policy_arn" {
+  description = "IAM policy ARN for DSQL access. Attach to EKS pod roles."
+  value       = try(module.aurora_dsql[0].connect_policy_arn, null)
+}

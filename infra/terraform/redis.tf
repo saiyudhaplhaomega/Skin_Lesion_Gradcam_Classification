@@ -6,7 +6,7 @@ resource "aws_subnet" "private_data_b" {
   availability_zone = "us-east-1b"
 
   tags = {
-    Name = "skin-lesion-learning-dev-private-data-b"
+    Name = "${var.project_name}-learning-${var.environment}-private-data-b"
   }
 }
 

@@ -14,26 +14,33 @@ Aurora DSQL is the planned cloud database target for this project. Aurora Postgr
 
 ## Current Project Implementation
 
-This guide is intentionally documented but not applied yet.
+The Terraform module is committed and ready. Nothing has been applied to AWS yet - no real cost has started.
 
 Current repo state:
 
 ```text
-Guide 10 event infrastructure exists in Terraform.
-No aws_dsql_cluster resource has been committed.
-No Aurora PostgreSQL fallback has been committed.
-No live DSQL cluster has been created by this task.
+infra/terraform/modules/aurora_dsql/       <- module: aws_dsql_cluster + SSM + IAM policy
+infra/terraform/database.tf               <- calls the module, attaches policy to EKS node role
+infra/terraform/variables.tf              <- enable_aurora_dsql (default false), dsql_deletion_protection
+infra/terraform/env/staging.tfvars        <- enable_aurora_dsql = false (change to true to create)
 ```
 
-Why: checking Terraform provider schema currently needs AWS/backend credentials in this workspace, and Aurora DSQL creates real hourly cost. The next DSQL step needs an explicit AWS SSO/console/CLI moment from you before I create or apply anything.
+Step 2 in this guide is already done via the module. Skip the manual `aws_dsql_cluster` block in Step 2 - the module handles it. Jump straight to `terraform plan` to preview what will be created:
 
-When you are ready, I will ask before running any of these:
+```powershell
+cd infra/terraform
+terraform init   # only needed once per workspace
+terraform plan -var-file="env/staging.tfvars" -var="enable_aurora_dsql=true"
+```
+
+Then set `enable_aurora_dsql = true` in `env/staging.tfvars` and run `terraform apply` when you are ready to incur cost.
+
+When you are ready to apply, run:
 
 ```powershell
 aws sso login
-aws dsql create-cluster
-terraform apply -var-file="env/staging.tfvars"
-kubectl config updates for staging
+cd infra/terraform
+terraform apply -var-file="env/staging.tfvars" -var="enable_aurora_dsql=true" -var="dsql_deletion_protection=true"
 ```
 
 > **One exception, decided in advance: the RAG vector index.** When you build the RAG features (`product/07`, `product/14`, `product/15`), the vector index needs the `pgvector` extension, and DSQL's extension support does not include it as far as is known. That is not a DSQL "blocker" to work around; it is an expected split. Transactional data stays on DSQL, and the vector index lives on a pgvector-capable Postgres (Aurora PostgreSQL or a small dedicated RDS PostgreSQL) in the same VPC, or on OpenSearch Serverless vector search. See `reference/09_SYSTEM_DESIGN_PATTERNS.md` Family 13.3. While you are here, it is worth confirming exactly which extensions DSQL does and does not support and noting it, since `local-dev/04` deliberately avoids extensions until this guide confirms them.
