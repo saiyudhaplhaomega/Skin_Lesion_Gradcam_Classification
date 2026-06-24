@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: skin-lesion-staging
+  labels:
+    app: skin-lesion-backend
+    environment: staging
+    platform: eks

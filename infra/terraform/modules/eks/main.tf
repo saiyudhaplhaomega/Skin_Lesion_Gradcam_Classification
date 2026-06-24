@@ -18,6 +18,12 @@ variable "environment" {
   type        = string
 }
 
+variable "endpoint_public_access" {
+  description = "Whether the EKS API server is reachable from the internet. Set false in production."
+  type        = bool
+  default     = true
+}
+
 variable "project" {
   description = "Project tag value"
   type        = string
@@ -103,9 +109,10 @@ resource "aws_iam_role_policy_attachment" "eks_ecr_pull_only" {
 }
 
 resource "aws_eks_cluster" "main" {
-  name     = var.cluster_name
-  role_arn = aws_iam_role.eks_cluster.arn
-  version  = "1.31"
+  name                          = var.cluster_name
+  role_arn                      = aws_iam_role.eks_cluster.arn
+  version                       = "1.31"
+  bootstrap_self_managed_addons = false
 
   access_config {
     authentication_mode                         = "API_AND_CONFIG_MAP"
@@ -115,7 +122,7 @@ resource "aws_eks_cluster" "main" {
   vpc_config {
     subnet_ids              = var.subnet_ids
     endpoint_private_access = true
-    endpoint_public_access  = true
+    endpoint_public_access  = var.endpoint_public_access
   }
 
   compute_config {

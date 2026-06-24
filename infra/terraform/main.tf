@@ -19,7 +19,7 @@ resource "aws_vpc" "main" {
   enable_dns_support   = true
 
   tags = {
-    Name = "skin-lesion-learning-dev-vpc"
+    Name = "${var.project_name}-learning-${var.environment}-vpc"
   }
 }
 
@@ -30,7 +30,7 @@ resource "aws_subnet" "public_a" {
   map_public_ip_on_launch = true
 
   tags = {
-    Name                     = "skin-lesion-learning-dev-public-a"
+    Name                     = "${var.project_name}-learning-${var.environment}-public-a"
     "kubernetes.io/role/elb" = "1"
   }
 }
@@ -42,7 +42,7 @@ resource "aws_subnet" "public_b" {
   map_public_ip_on_launch = true
 
   tags = {
-    Name                     = "skin-lesion-learning-dev-public-b"
+    Name                     = "${var.project_name}-learning-${var.environment}-public-b"
     "kubernetes.io/role/elb" = "1"
   }
 }
@@ -51,7 +51,7 @@ resource "aws_internet_gateway" "main" {
   vpc_id = aws_vpc.main.id
 
   tags = {
-    Name = "skin-lesion-learning-dev-igw"
+    Name = "${var.project_name}-learning-${var.environment}-igw"
   }
 }
 
@@ -64,7 +64,7 @@ resource "aws_route_table" "public" {
   }
 
   tags = {
-    Name = "skin-lesion-learning-dev-public-rt"
+    Name = "${var.project_name}-learning-${var.environment}-public-rt"
   }
 }
 
@@ -84,7 +84,7 @@ resource "aws_subnet" "private_app_a" {
   availability_zone = "us-east-1a"
 
   tags = {
-    Name                              = "skin-lesion-learning-dev-private-app-a"
+    Name                              = "${var.project_name}-learning-${var.environment}-private-app-a"
     "kubernetes.io/role/internal-elb" = "1"
   }
 }
@@ -95,7 +95,7 @@ resource "aws_subnet" "private_app_b" {
   availability_zone = "us-east-1b"
 
   tags = {
-    Name                              = "skin-lesion-learning-dev-private-app-b"
+    Name                              = "${var.project_name}-learning-${var.environment}-private-app-b"
     "kubernetes.io/role/internal-elb" = "1"
   }
 }
@@ -106,7 +106,87 @@ resource "aws_subnet" "private_data_a" {
   availability_zone = "us-east-1a"
 
   tags = {
-    Name = "skin-lesion-learning-dev-private-data-a"
+    Name = "${var.project_name}-learning-${var.environment}-private-data-a"
+  }
+}
+
+resource "aws_security_group" "vpc_endpoints" {
+  name        = "${var.project_name}-vpc-endpoints-${var.environment}"
+  description = "Allow private app subnets to reach AWS service endpoints"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    description = "HTTPS from private app subnets"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = [
+      aws_subnet.private_app_a.cidr_block,
+      aws_subnet.private_app_b.cidr_block,
+    ]
+  }
+
+  egress {
+    description = "Endpoint responses"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name        = "${var.project_name}-vpc-endpoints-${var.environment}"
+    Project     = var.project_name
+    Environment = var.environment
+  }
+}
+
+resource "aws_vpc_endpoint" "ecr_api" {
+  vpc_id              = aws_vpc.main.id
+  service_name        = "com.amazonaws.${var.aws_region}.ecr.api"
+  vpc_endpoint_type   = "Interface"
+  private_dns_enabled = true
+  subnet_ids = [
+    aws_subnet.private_app_a.id,
+    aws_subnet.private_app_b.id,
+  ]
+  security_group_ids = [aws_security_group.vpc_endpoints.id]
+
+  tags = {
+    Name        = "${var.project_name}-ecr-api-${var.environment}"
+    Project     = var.project_name
+    Environment = var.environment
+  }
+}
+
+resource "aws_vpc_endpoint" "ecr_dkr" {
+  vpc_id              = aws_vpc.main.id
+  service_name        = "com.amazonaws.${var.aws_region}.ecr.dkr"
+  vpc_endpoint_type   = "Interface"
+  private_dns_enabled = true
+  subnet_ids = [
+    aws_subnet.private_app_a.id,
+    aws_subnet.private_app_b.id,
+  ]
+  security_group_ids = [aws_security_group.vpc_endpoints.id]
+
+  tags = {
+    Name        = "${var.project_name}-ecr-dkr-${var.environment}"
+    Project     = var.project_name
+    Environment = var.environment
+  }
+}
+
+resource "aws_vpc_endpoint" "s3" {
+  vpc_id            = aws_vpc.main.id
+  service_name      = "com.amazonaws.${var.aws_region}.s3"
+  vpc_endpoint_type = "Gateway"
+  route_table_ids   = [aws_vpc.main.default_route_table_id]
+
+  tags = {
+    Name        = "${var.project_name}-s3-${var.environment}"
+    Project     = var.project_name
+    Environment = var.environment
   }
 }
 # --- Guide 05: KMS Key ---
@@ -120,7 +200,7 @@ resource "aws_kms_key" "main" {
 }
 
 resource "aws_kms_alias" "main" {
-  name          = "alias/skin-lesion-dev"
+  name          = "alias/${var.project_name}-${var.environment}"
   target_key_id = aws_kms_key.main.key_id
 }
 
@@ -333,6 +413,7 @@ module "eks" {
     aws_subnet.private_app_a.id,
     aws_subnet.private_app_b.id,
   ]
-  environment = var.environment
-  project     = var.project_name
+  environment            = var.environment
+  project                = var.project_name
+  endpoint_public_access = var.eks_endpoint_public_access
 }

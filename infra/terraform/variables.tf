@@ -83,6 +83,12 @@ variable "enable_mlflow_server" {
   default     = false
 }
 
+variable "eks_endpoint_public_access" {
+  description = "Allow public internet access to the EKS API server. Set false in production (requires VPN/bastion to run kubectl). Leave true for staging convenience."
+  type        = bool
+  default     = true
+}
+
 variable "mlflow_ami_id" {
   description = "AMI ID for the optional MLflow EC2 host. Set explicitly before enabling MLflow."
   type        = string
