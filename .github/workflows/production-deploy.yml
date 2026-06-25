@@ -1,0 +1,164 @@
+name: Production Deploy
+
+# Manually triggered production release. Requires explicit tag + approval.
+#
+# Release flow:
+#   1. Git-tag the commit you want to ship: git tag v1.2.3 && git push --tags
+#   2. The tag push triggers this workflow.
+#   3. The "approve-prod" environment gate fires (configure in repo Settings >
+#      Environments > production > Required reviewers). A maintainer approves.
+#   4. The image is built from the tagged commit, pushed to the prod ECR repo,
+#      and rolled out to the prod EKS namespace.
+#
+# Required GitHub secrets (separate from staging):
+#   AWS_ACCESS_KEY_ID_PROD      - IAM key for prod ECR + EKS
+#   AWS_SECRET_ACCESS_KEY_PROD
+#   KUBE_CONFIG_DATA_PROD       - base64 kubeconfig pointing at prod cluster
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "ECR image tag to promote (e.g. abc12345 from staging)"
+        required: true
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REGISTRY: 526404916929.dkr.ecr.us-east-1.amazonaws.com
+  ECR_REPOSITORY: skin-lesion-backend-prod
+  EKS_CLUSTER: skin-lesion-eks-prod
+  K8S_NAMESPACE: skin-lesion-prod
+  K8S_DEPLOYMENT: skin-lesion-backend
+
+jobs:
+  # Promote path: if a staging image tag is given, retag it in the prod ECR
+  # repo instead of rebuilding. Avoids "works on staging, breaks in prod" drift
+  # that can happen when you rebuild with the same source code.
+  promote-or-build:
+    name: Tag image for production
+    runs-on: ubuntu-latest
+    environment: production   # triggers the approval gate
+    outputs:
+      image_tag: ${{ steps.resolve.outputs.IMAGE_TAG }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (prod)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_PROD }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_PROD }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Resolve image tag
+        id: resolve
+        run: |
+          if [ -n "${{ github.event.inputs.image_tag }}" ]; then
+            # promote an existing staging image
+            echo "IMAGE_TAG=${{ github.event.inputs.image_tag }}" >> "$GITHUB_OUTPUT"
+            echo "MODE=promote" >> "$GITHUB_OUTPUT"
+          else
+            # build fresh from tagged commit
+            echo "IMAGE_TAG=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "MODE=build" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Promote staging image (if promote mode)
+        if: steps.resolve.outputs.MODE == 'promote'
+        run: |
+          # Pull the staging image, retag, and push to prod repo.
+          STAGING_IMAGE=${{ env.ECR_REGISTRY }}/skin-lesion-backend-staging:${{ steps.resolve.outputs.IMAGE_TAG }}
+          PROD_IMAGE=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.resolve.outputs.IMAGE_TAG }}
+          docker pull "$STAGING_IMAGE"
+          docker tag "$STAGING_IMAGE" "$PROD_IMAGE"
+          docker tag "$STAGING_IMAGE" "${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest"
+          docker push "$PROD_IMAGE"
+          docker push "${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest"
+
+      - name: Build fresh image (if build mode)
+        if: steps.resolve.outputs.MODE == 'build'
+        working-directory: Skin_Lesion_Classification_backend
+        run: |
+          docker build \
+            --tag ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.resolve.outputs.IMAGE_TAG }} \
+            --tag ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest \
+            --label "git.tag=${{ github.ref_name }}" \
+            --label "git.sha=${{ github.sha }}" \
+            .
+          docker push ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.resolve.outputs.IMAGE_TAG }}
+          docker push ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest
+
+  deploy:
+    name: Roll out to production
+    runs-on: ubuntu-latest
+    needs: promote-or-build
+    environment: production
+
+    steps:
+      - name: Configure AWS credentials (prod)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_PROD }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_PROD }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: "v1.31.0"
+
+      - name: Load prod kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG_DATA_PROD }}" | base64 --decode > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Roll out
+        run: |
+          kubectl set image deployment/${{ env.K8S_DEPLOYMENT }} \
+            ${{ env.K8S_DEPLOYMENT }}=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ needs.promote-or-build.outputs.image_tag }} \
+            -n ${{ env.K8S_NAMESPACE }}
+
+      - name: Wait for rollout
+        run: |
+          kubectl rollout status deployment/${{ env.K8S_DEPLOYMENT }} \
+            -n ${{ env.K8S_NAMESPACE }} \
+            --timeout=600s
+
+      - name: Smoke test - health endpoint
+        run: |
+          ALB=$(kubectl get ingress -n ${{ env.K8S_NAMESPACE }} \
+            -o jsonpath='{.items[0].status.loadBalancer.ingress[0].hostname}')
+          for i in {1..8}; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://$ALB/health")
+            if [ "$STATUS" = "200" ]; then
+              echo "Production health check passed (attempt $i)"
+              exit 0
+            fi
+            echo "Attempt $i: HTTP $STATUS"
+            sleep 20
+          done
+          echo "Production health check failed - rolling back"
+          kubectl rollout undo deployment/${{ env.K8S_DEPLOYMENT }} -n ${{ env.K8S_NAMESPACE }}
+          exit 1
+
+      - name: Tag release in ECR (mark as stable)
+        if: success()
+        run: |
+          # Re-tag with 'stable' so rollback scripts can always find the last good image.
+          MANIFEST=$(aws ecr batch-get-image \
+            --repository-name ${{ env.ECR_REPOSITORY }} \
+            --image-ids imageTag=${{ needs.promote-or-build.outputs.image_tag }} \
+            --query 'images[0].imageManifest' --output text)
+          aws ecr put-image \
+            --repository-name ${{ env.ECR_REPOSITORY }} \
+            --image-tag stable \
+            --image-manifest "$MANIFEST"
