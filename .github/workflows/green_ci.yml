@@ -1,0 +1,72 @@
+name: Green CI Metrics
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  green-metrics:
+    runs-on: ubuntu-latest
+    env:
+      GREEN_METRICS_URL: ${{ secrets.GREEN_METRICS_URL }}
+      GREEN_METRICS_TOKEN: ${{ secrets.GREEN_METRICS_TOKEN }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+
+      - name: Validate Green Dev secrets
+        run: |
+          if [ -z "$GREEN_METRICS_URL" ]; then
+            echo "GREEN_METRICS_URL is missing"
+            exit 1
+          fi
+
+          if ! [[ "$GREEN_METRICS_URL" =~ ^https?:// ]]; then
+            echo "GREEN_METRICS_URL must start with http:// or https://"
+            exit 1
+          fi
+
+      - name: Record build start
+        id: build_start
+        run: echo "time=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Run workspace checks
+        run: |
+          terraform -chdir=infra/terraform fmt -recursive -check
+          terraform -chdir=infra/terraform init -backend=false -input=false
+          terraform -chdir=infra/terraform validate
+          python -m py_compile run_training.py
+
+      - name: Run docs check
+        shell: pwsh
+        run: ./scripts/docs-validate.ps1
+
+      - name: Record build end
+        id: build_end
+        run: echo "time=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Calculate build duration
+        id: build_duration
+        run: |
+          echo "duration=$((${{ steps.build_end.outputs.time }} - ${{ steps.build_start.outputs.time }}))" >> "$GITHUB_OUTPUT"
+
+      - name: Send build metric to Green Dev Backend
+        run: |
+          curl --fail --show-error --silent -X POST "$GREEN_METRICS_URL" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $GREEN_METRICS_TOKEN" \
+            -d '{
+              "repo": "${{ github.repository }}",
+              "branch": "${{ github.ref_name }}",
+              "commit": "${{ github.sha }}",
+              "duration": ${{ steps.build_duration.outputs.duration }},
+              "runner_type": "${{ runner.os }}",
+              "metric_type": "ci_build"
+            }'
