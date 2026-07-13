@@ -956,6 +956,14 @@ Do not save lesion photos to the public camera roll unless the user explicitly c
 - `Clear local temp files after upload when possible` - explicitly delete the temp file after the upload succeeds to avoid leaving medical images in the temp directory.
 - `Do not save lesion photos to the public camera roll unless the user explicitly chooses` - the default camera capture flow should not save images to the photo library. Medical images in the camera roll can be seen by other apps, synced to cloud photo services, and shared accidentally.
 
+### Session Recovery Rules
+
+The Cognito access token expires hourly. Two rules keep the app usable across that boundary instead of silently failing or logging the user out for the wrong reason:
+
+- `refreshSession() must only clear stored tokens on a genuine Cognito rejection` - a rejection means Cognito itself returned `NotAuthorizedException`, `UserNotFoundException`, `ResourceNotFoundException`, or `UserNotConfirmedException`. Any other failure (offline, Cognito outage, a captive portal returning HTML) must leave the stored refresh token alone, since it is still valid and a later retry can succeed.
+- `Every authenticated request must go through client.ts's authorizedFetch, never a bare fetch()` - authorizedFetch attaches the token, retries once after a refresh on a 401, and signals AuthProvider to sign the user out only when that refresh was a genuine rejection. A bare `fetch()` with a manually attached token (the original pattern in `labResults.ts`, `images.api.ts`, and `analysis.ts`) skips all of this and just fails once the token expires mid-session.
+- `refreshSession() must dedupe concurrent callers behind a single in-flight promise` - Cognito rotates the refresh token on every use, so two callers refreshing at the same time (AuthProvider's mount-time check racing an authorizedFetch retry, for example) would otherwise invalidate each other's session.
+
 ## Minimum Mobile MVP
 
 Build first:
