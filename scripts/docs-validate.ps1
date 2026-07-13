@@ -92,10 +92,16 @@ foreach ($file in $allMarkdown) {
     }
 }
 
-# 3. Check no docs/build or docs/advanced references exist (stale paths)
+# 3. Check no docs/build or docs/advanced references exist in THIS repo's own
+# docs (stale paths) - this repo's docs/ has never had build/ or advanced/
+# subdirectories. Skin_Lesion_Classification_frontend has its own, separate
+# docs/build/ and docs/advanced/ subdirectories that are real and current
+# (e.g. docs/build/01_CONFIGURE_COGNITO_LOGIN.md), so files physically inside
+# that repo are excluded here - a self-reference to its own real path is not
+# a stale reference to this repo's structure.
 # Use word boundaries to avoid matching docs/building or docs/advanced-course
 $buildRefs = $allMarkdown | ForEach-Object {
-    if ($_.FullName -notmatch $excludePattern) {
+    if ($_.FullName -notmatch $excludePattern -and $_.FullName -notmatch 'Skin_Lesion_Classification_frontend') {
         Select-String -Path $_.FullName -Pattern '\bdocs/build\b|\bdocs/advanced\b' -Quiet
     }
 } | Where-Object { $_ }

@@ -2,6 +2,8 @@
 
 Use this after the backend tests and a manual EKS deployment work. This guide explains the workflow layout that exists now and the two setup tasks a human still needs to complete.
 
+This guide uses two repos: the parent repository (`.github/workflows/docs-terraform-ci.yml` and the disabled deployment stubs) and `Skin_Lesion_Classification_backend` (its own separate GitHub repository, where the real CI, staging, and production workflows live). Every file path below is relative to whichever of the two repos it is shown under.
+
 ## Current Project Implementation
 
 The parent repository does not contain the backend source in its Git history. `Skin_Lesion_Classification_backend/` is ignored here and is its own GitHub repository:
