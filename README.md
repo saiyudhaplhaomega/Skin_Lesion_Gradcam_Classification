@@ -79,11 +79,7 @@ Use that guide before adding more RAG features or promoting the 14-class/12-clas
 
 ## Current Rule
 
-No GitHub Actions workflows are included right now.
-
-No Terraform root `infra/terraform/main.tf` is included right now.
-
-You will create those files yourself when the guide reaches that step.
+`.github/workflows/`, `infra/terraform/main.tf`, and the root `Makefile` now exist - each backend/frontend/mobile repo has its own CI, and Terraform staging infrastructure has been drafted (not yet applied to AWS; see `docs/05_BUILD_STATUS.md` for what has actually been run).
 
 Before creating cloud resources, read:
 
@@ -166,7 +162,6 @@ Later, after the local app works:
 - Redis/ElastiCache cache boundary
 - training pipeline and model registry
 - lab OCR extraction after simple lab upload works
-- GitHub Actions
 - multi-region
 
 Do not build those early. Each one gets easier after the previous step works.
