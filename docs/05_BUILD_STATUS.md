@@ -58,7 +58,7 @@ After completing a guide:
 | 13 | 13_LLM_RAG_AGENT_BOUNDARIES_HANDHOLDING.md | DONE | 2026-06-25 - admin_market_research_service: pgvector RAG + MiniMax brief generation |
 | 14 | 14_ROLE_BASED_EVOLVING_AGENTS_HANDHOLDING.md | PLANNED | |
 | 15 | 15_ADMIN_MARKET_RESEARCH_RAG_HANDHOLDING.md | DONE | 2026-06-25 - source CRUD + approval flow + pgvector indexing |
-| 16 | 16_MOBILE_APP_HANDHOLDING.md | PLANNED | |
+| 16 | 16_MOBILE_APP_HANDHOLDING.md | DONE | 2026-07-13 - M1-M9 built (auth, dashboard, body map, image capture/analyze, privacy, lab results, reminders, reports); session-recovery/auth-retry bugs found and fixed; CI added (typecheck, 14 jest tests, expo-doctor, web export) |
 | 17 | 17_TRAINING_PIPELINE_MODEL_REGISTRY_HANDHOLDING.md | PLANNED | |
 | 18 | 18_LAB_OCR_EXTRACTION_HANDHOLDING.md | DONE | 2026-06-14 - manual-stub OCR provider, draft tables, review API, doctor UI, tests |
 
@@ -225,10 +225,13 @@ From 02_ULTIMATE_PRODUCTION_GUIDE.md Section 5:
 ## Last Updated
 
 - Last updated: 2026-07-13
-- Updated by: infrastructure and application pre-deploy fixes documented; AWS changes remain unapplied
+- Updated by: mobile app build + CI, RAG eval system (Rounds 21-27), frontend Next.js 16 upgrade, dependency CVE fixes, consolidated evaluation status report; AWS changes remain unapplied
 
-### Verified Local State (2026-07-13)
-- Backend test suite: 470 tests passing after the identity, inference timeout, and test-fixture fixes.
+### Verified Local State (2026-07-13, later same-day update)
+- Backend test suite: 489 tests passing (up from 470 earlier the same day - RAG eval hardening, a real pgvector bug fix, S3 lab-result upload wiring, and the new evaluation status reporter).
+- Frontend: upgraded to Next.js 16.2.10 + React 19 (closes two disclosed CVEs with no in-range 14.x patch); vitest suite now actually runs (a broken path alias meant it never had before) and is wired into CI for the first time.
+- Mobile: CI added (none existed before); 14 jest tests passing; expo-doctor 21/21.
+- New: `scripts/eval_status_report.py` reports every documented model promotion gate (G1-G10) as PASS/FAIL/NOT_CHECKABLE against real imported data, and every RAG domain's pass rate - the first single answer to "is this system ready to promote" across both eval tracks. See `docs/07_RAG_EVAL_AND_MULTI_AGENT_EXECUTION_PLAN.md` Rounds 21-27 for the full trail, including a real, previously-undetected bug in the hybrid retrieval feature (Round 22) that only surfaced once it was run against an actual pgvector container instead of mocked tests.
 - `terraform fmt` passed. `terraform validate` was not run because the local AWS SSO session had expired.
 - No Terraform resources from today's batch have been applied to AWS.
 
