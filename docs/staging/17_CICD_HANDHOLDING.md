@@ -1,280 +1,202 @@
 # CI/CD Handholding Guide
 
-Use this only after local checks exist.
+Use this after the backend tests and a manual EKS deployment work. This guide explains the workflow layout that exists now and the two setup tasks a human still needs to complete.
 
 ## Current Project Implementation
 
-Guide 17 now has CI for checks that are already safe to automate.
-
-Files created:
+The parent repository does not contain the backend source in its Git history. `Skin_Lesion_Classification_backend/` is ignored here and is its own GitHub repository:
 
 ```text
-.github/workflows/docs-terraform-ci.yml
-Skin_Lesion_Classification_backend/.github/workflows/backend-ci.yml
+saiyudhaplhaomega/Skin_Lesion_Classification_backend
 ```
 
-Why there are two workflow locations:
+The old parent-repository deployment workflows checked out this parent repository and then tried to run `docker build` from `Skin_Lesion_Classification_backend/`. On a fresh GitHub Actions checkout that directory has no backend source, so those workflows could never build or deploy the application.
+
+The parent workflow files are now disabled `workflow_dispatch` stubs. They point to the real location so the broken checkout pattern is not added again.
 
 ```text
-Parent repo: docs and Terraform live in the parent workspace.
-Backend repo: backend code is a nested Git repository with its own GitHub remote.
+Parent repository
+  .github/workflows/docs-terraform-ci.yml     -> documentation and Terraform checks
+  .github/workflows/staging-deploy.yml        -> disabled pointer only
+  .github/workflows/production-deploy.yml     -> disabled pointer only
+
+Backend repository
+  .github/workflows/backend-ci.yml            -> backend tests, lint, and type checks
+  .github/workflows/staging-deploy.yml        -> real staging deployment
+  .github/workflows/production-deploy.yml     -> real production deployment
 ```
 
-Current CI coverage:
-
-```text
-parent docs-check
-parent Terraform fmt/validate with backend disabled in CI
-backend focused pytest checks
-backend ruff checks for Guides 17-21 files
-```
-
-Not added yet:
-
-```text
-frontend CI
-deployment CI
-Terraform apply CI
-production approval workflow
-```
-
-Why: the frontend repo currently has an existing dirty `package-lock.json`, and deployment/Terraform apply require live cloud credentials and manual staging proof first.
+Why: a GitHub Actions job can only build source that its repository checkout actually contains. Backend deployment automation belongs with the backend source repository.
 
 ## Goal
 
-Automate commands you already run successfully by hand.
+Automate the backend release path only after local checks and a manual EKS rollout are understood:
 
-Why: CI/CD should only automate checks that already pass locally, so failed workflows point to real regressions instead of unfinished setup.
+```text
+backend tests pass -> authenticate with OIDC -> build and push image -> deploy image digest -> watch rollout -> undo on failure
+```
+
+The deployment workflows wait for the existing backend CI job to pass first. They build and push the image, deploy the resulting image by digest instead of a mutable tag, and run `kubectl rollout undo` automatically if the rollout fails.
+
+Why: a digest identifies exactly one image. A tag such as `latest` can point to a different image later, which makes a rollback or incident investigation less clear.
 
 ## Command Location
 
-Start from the repo root:
+Start from the parent workspace when you need to inspect docs or Terraform:
 
 ```powershell
 cd C:\Users\saiyu\Desktop\projects\KI_projects\Skin_Lesion_GRADCAM_Classification
 ```
 
-**What this does:** moves to the workspace root, which is the git repository root where `.github/workflows/` will be created.
-
-GitHub workflow files belong in:
-
-```text
-.github/workflows
-```
-
-**What this directory is:** the folder GitHub Actions reads on every push and pull request. YAML files here define when jobs run (triggers), what machine they run on (runner), and what steps to execute.
-
-Do not create that folder until this guide tells you to.
-
-## Repo And File Map
-
-- Main workspace: `C:\Users\saiyu\Desktop\projects\KI_projects\Skin_Lesion_GRADCAM_Classification`
-- GitHub workflow files: `.github/workflows/`
-- Backend repo checks: `Skin_Lesion_Classification_backend/`
-- Frontend repo checks: `Skin_Lesion_Classification_frontend/`
-- Terraform checks: `infra/terraform/`
-- Create workflow YAML only under `.github/workflows/`, and keep each job's working directory aligned with the repo named in the local check table.
-
-Because this workspace contains nested Git repositories, backend workflow YAML belongs under:
-
-```text
-Skin_Lesion_Classification_backend/.github/workflows/
-```
-
-**What this means:** GitHub Actions for backend code must live in the backend GitHub repository, not only in the parent docs/infra repository.
-
-## Rule
-
-No workflow should be created until the command works locally.
-
-Run each local check from the directory it belongs to:
-
-| Check | Directory |
-|---|---|
-| `make test` | `Skin_Lesion_Classification_backend` |
-| `make build` | `Skin_Lesion_Classification_frontend` |
-| `terraform fmt` and `terraform validate` | `infra/terraform` |
-| `docker build` | `Skin_Lesion_Classification_backend` |
-
-## First Backend CI
-
-Create at this CI gate:
-
-```text
-Skin_Lesion_Classification_backend/.github/workflows/backend-ci.yml
-```
-
-**What this file is:** the backend CI workflow. GitHub Actions runs this on every push and pull request. The workflow must pass for a PR to be mergeable if branch protection is configured.
-
-Only after:
+For backend workflow files and backend checks, move into the separate backend repository:
 
 ```powershell
-cd Skin_Lesion_Classification_backend
+cd C:\Users\saiyu\Desktop\projects\KI_projects\Skin_Lesion_GRADCAM_Classification\Skin_Lesion_Classification_backend
+```
+
+Terraform commands run from:
+
+```text
+C:\Users\saiyu\Desktop\projects\KI_projects\Skin_Lesion_GRADCAM_Classification\infra\terraform
+```
+
+Why: each GitHub repository has its own checkout in Actions. Keeping the command location explicit prevents the old parent-repository build mistake.
+
+## What GitHub Actions Does Here
+
+A workflow is a YAML file in a repository's `.github/workflows/` directory. It defines a trigger, a runner, and a sequence of steps. In this project:
+
+- `backend-ci.yml` checks the backend code before a release can proceed.
+- `staging-deploy.yml` in the backend repository performs the staging image build and EKS rollout.
+- `production-deploy.yml` in the backend repository performs the production rollout and uses the GitHub `production` Environment as the approval gate.
+- `docs-terraform-ci.yml` remains in the parent repository because its work is limited to parent-repository docs and Terraform configuration.
+
+Do not create another backend deployment workflow in this parent repository.
+
+## Authentication: GitHub OIDC Instead Of Static Keys
+
+The backend deployment workflows authenticate to AWS through GitHub OpenID Connect, or OIDC. GitHub issues a short-lived token for the running workflow. AWS accepts it only when the token matches the trusted backend repository and then allows it to assume the Terraform-created deploy role.
+
+Do not store `AWS_ACCESS_KEY_ID` or `AWS_SECRET_ACCESS_KEY` as backend repository secrets for these deployments. The only AWS secret the backend repository needs is:
+
+```text
+AWS_DEPLOY_ROLE_ARN
+```
+
+The value comes from Terraform after staging has been applied. The OIDC provider is global to the AWS account and Terraform creates it only when staging is applied. Apply staging first, then run this command from `infra/terraform`:
+
+```powershell
+terraform init -backend-config=env/backend-staging.hcl -reconfigure
+terraform output github_actions_deploy_role_arn
+```
+
+Expected result: Terraform prints an IAM role ARN for the staging deployment role.
+
+Why: OIDC avoids leaving a long-lived AWS access key in GitHub. The role is limited to the configured backend repository and environment.
+
+## Human Setup Step 1: Add The Deploy Role Secret
+
+In GitHub, open the separate backend repository, not this parent repository:
+
+```text
+saiyudhaplhaomega/Skin_Lesion_Classification_backend
+```
+
+1. Open `Settings`.
+2. Open `Secrets and variables`, then `Actions`.
+3. Select `New repository secret`.
+4. Set the name to exactly `AWS_DEPLOY_ROLE_ARN`.
+5. Paste the value from `terraform output github_actions_deploy_role_arn`.
+6. Save the secret.
+
+Check: open the backend repository's Actions secrets page. `AWS_DEPLOY_ROLE_ARN` should appear by name, with its value hidden.
+
+Expected result: the backend deployment workflows can request the AWS role through OIDC without static AWS credentials.
+
+Why: the role ARN tells the workflow which short-lived AWS identity to assume. It is not an access key.
+
+## Human Setup Step 2: Create The Production Approval Gate
+
+In the same backend GitHub repository:
+
+1. Open `Settings`.
+2. Open `Environments`.
+3. Create an environment named exactly `production`.
+4. Enable required reviewers and choose the people who must approve a production deployment.
+5. Save the protection rule.
+
+Check: the Environments page shows `production` and shows that required reviewers are enabled.
+
+Expected result: the production workflow pauses before its protected deployment step until an approved reviewer allows it to continue.
+
+Why: production delivery needs a human decision even when staging deployment is automated.
+
+## Backend CI Gate
+
+Before relying on a deployment workflow, run the backend checks locally from the backend repository:
+
+```powershell
+cd C:\Users\saiyu\Desktop\projects\KI_projects\Skin_Lesion_GRADCAM_Classification\Skin_Lesion_Classification_backend
 pytest
 ```
 
-**What this means:** the backend test suite must pass locally before the workflow is created. If tests fail locally, the CI workflow will also fail - and debugging CI failures is harder than debugging local failures.
+Expected result: the backend tests pass. The current deployment workflows require the existing `backend-ci.yml` job to pass before they deploy.
 
-Workflow should do:
+Why: CI should fail on a real code regression, not because a command was never proven locally.
+
+## What A Deployment Workflow Does
+
+The real backend-repository staging and production workflows follow this order:
 
 ```text
-checkout
-setup Python
-install dependencies
-run pytest
+checkout backend source
+wait for backend CI success
+authenticate to AWS with GitHub OIDC and AWS_DEPLOY_ROLE_ARN
+build the backend image
+push the image to ECR
+deploy the image digest to the target Kubernetes Deployment
+wait for rollout status
+run kubectl rollout undo if the rollout fails
 ```
 
-**What each step does:** `checkout` clones the repo into the CI runner. `setup Python` installs the correct Python version. `install dependencies` runs `pip install -r requirements.txt` (or equivalent) to install the project packages. `run pytest` executes the test suite and fails the workflow if any test fails.
+For production, GitHub's `production` Environment adds the required-reviewer stop before the protected deployment continues.
 
-Do not create this workflow until the backend test command passes by hand.
-
-## Frontend CI Gate
-
-Only after:
+If a rollout fails, inspect the backend repository Actions log and then check the target cluster from a terminal that has cluster access:
 
 ```powershell
-cd Skin_Lesion_Classification_frontend
-npm run build
+kubectl rollout status deployment/skin-lesion-backend -n skin-lesion-staging
+kubectl get pods -n skin-lesion-staging
 ```
 
-**What this means:** the frontend must build without errors locally before the CI workflow is created. Common failures here are missing environment variables, TypeScript type errors, and missing dependencies.
+Expected result: a successful run completes its rollout. A failed rollout is automatically returned to the prior Kubernetes revision by the workflow.
 
-Workflow should do:
+Why: rollout status catches a deployment that started but never became ready. Automatic undo shortens the time the failed revision is active.
 
-```text
-checkout
-setup Node
-npm ci
-npm run build
-```
+## Parent Repository Terraform And Docs Check
 
-**What each step does:** `checkout` clones the repo. `setup Node` installs the Node.js version from `.nvmrc` or the workflow config. `npm ci` installs dependencies from `package-lock.json` exactly (no version resolution) - faster and more reproducible than `npm install`. `npm run build` compiles TypeScript, bundles assets, and fails the workflow if there are errors.
-
-Do not create this workflow until the frontend build command passes by hand.
-
-## Terraform CI Gate
-
-Only after:
+The parent repository still has a safe CI workflow for its own files. Run its local equivalent from the parent workspace:
 
 ```powershell
-cd infra/terraform
-terraform fmt
-terraform validate
-```
-
-**What this means:** both commands must succeed locally before the Terraform CI workflow is created. `terraform fmt` with no flags modifies files in place - in CI use `terraform fmt -check` which exits non-zero if formatting is wrong without modifying files.
-
-Workflow should do:
-
-```text
-terraform fmt -check
-terraform validate
-```
-
-**What each step does:** `terraform fmt -check` reads all `.tf` files and exits with an error if any are not formatted correctly - fails the workflow without modifying files. `terraform validate` checks resource references, variable types, and syntax without connecting to AWS. The plan step is deliberately excluded from CI because it requires AWS credentials and would cost money on every PR.
-
-Do not create this workflow until `infra/terraform/main.tf` exists and validates locally.
-
-Current parent workflow:
-
-```text
-.github/workflows/docs-terraform-ci.yml
-```
-
-It runs:
-
-```text
+cd C:\Users\saiyu\Desktop\projects\KI_projects\Skin_Lesion_GRADCAM_Classification\infra\terraform
 terraform fmt -recursive -check
 terraform init -backend=false -input=false
 terraform validate
-./scripts/docs-validate.ps1
+cd ..\..
+.\scripts\docs-validate.ps1
 ```
 
-**Why `-backend=false`:** the local Terraform backend uses AWS S3 state. CI should validate syntax without needing AWS credentials or touching cloud state.
+Expected result: Terraform formatting and validation pass without reading AWS state, and the documentation check passes.
 
-## Do Not Add Yet
+Why: the parent repository owns these files. Its CI deliberately does not attempt to build or deploy backend source it does not contain.
 
-- deploy workflow
-- blue/green workflow
-- canary workflow
-- Terraform apply workflow
-- production approval workflow
+## Current Stop Point
 
-## Deployment Automation Gate
+Before a first AWS staging deploy, complete these items in order:
 
-Only automate deployment after manual deployment works:
+1. Apply the staging Terraform environment so the global GitHub OIDC provider and staging deploy role exist.
+2. Copy the staging `github_actions_deploy_role_arn` output into the backend repository's `AWS_DEPLOY_ROLE_ARN` secret.
+3. Create the `production` Environment with required reviewers in the backend repository.
+4. Confirm the backend CI workflow passes in the backend repository.
+5. Start the backend repository's staging workflow only after the staging cluster and manifests are ready.
 
-```text
-build image -> push image -> update Kubernetes -> rollout status -> health check -> rollback plan
-```
-
-**What this manual sequence does:** each step is run by hand until it is repeatable without errors. `build image` builds the Docker image with the commit SHA as the tag. `push image` uploads it to ECR. `update Kubernetes` patches the deployment image field to the new tag. `rollout status` waits for pods to become ready. `health check` confirms the app is responding. `rollback plan` documents the `kubectl rollout undo` command to use if something is wrong.
-
-That manual release order becomes a GitHub Actions deployment workflow at the deployment automation gate:
-
-```text
-checkout
-run backend tests
-run frontend build
-build backend image
-push immutable image tag to ECR
-update staging Kubernetes deployment
-wait for rollout status
-run staging health check
-require approval for production
-update production deployment
-run production health check
-keep rollback command visible
-```
-
-**What each step does in the automated workflow:** `checkout` fetches the code. Tests and build run first to catch regressions before any image is built. `push immutable image tag` uses the git commit SHA as the Docker tag so each deployment is traceable to a specific commit. `require approval for production` is a GitHub Actions environment protection rule - a human must approve before the production steps run. `keep rollback command visible` means the workflow outputs the `kubectl rollout undo` command in the logs even on success, so it is always one click away if needed.
-
-Do not add blue/green, canary, or Terraform apply workflows until the simple manual staging deploy is repeatable.
-
-## Check
-
-Run from the repo root:
-
-```powershell
-make docs-check
-git status
-```
-
-**What these commands do:** `make docs-check` runs the documentation readiness checks to confirm guide ordering and required sections are correct. `git status` shows that the new CI workflow file exists as an untracked or modified file in `.github/workflows/` - confirms the file was actually created.
-
-Expected result: docs check passes and CI workflow file exists in `.github/workflows/`.
-
-Current expected result:
-
-```text
-Parent workflow exists for docs/Terraform.
-Backend workflow exists in the backend repo.
-No deploy workflow exists yet.
-```
-
-## Cost Pause / Resume
-
-If this guide created or uses cloud resources, pause or shut them down before stopping for the day.
-
-Run from the repo root:
-
-```powershell
-make cloud-status ENV=dev
-make cloud-pause ENV=dev
-make cloud-shutdown ENV=dev CONFIRM_DESTROY=YES
-```
-
-**What this command block does:** `make cloud-status ENV=dev` reports running dev resources. `make cloud-pause ENV=dev` scales pods to zero. `make cloud-shutdown ENV=dev CONFIRM_DESTROY=YES` destroys all dev cloud resources.
-
-Use `ENV=staging` or `ENV=prod` only when you are intentionally working in that environment.
-
-Before starting the next guide, resume the environment and re-run the guide's check command:
-
-```powershell
-make cloud-start ENV=dev
-make cloud-status ENV=dev
-```
-
-**What this command block does:** `make cloud-start ENV=dev` recreates or resumes the dev environment. `make cloud-status ENV=dev` confirms it is healthy before continuing.
-
-If this guide was local-only, no cloud shutdown is needed.
+Nothing in this guide applies Terraform or changes GitHub settings by itself. Those are deliberate human actions because they create real AWS and repository state.

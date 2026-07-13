@@ -31,7 +31,7 @@ Terraform commands run from:
 infra/terraform
 ```
 
-**What this means:** `cd infra/terraform` before running `terraform init`, `plan`, `apply`, or `destroy`.
+**What this means:** `cd infra/terraform` before running Terraform. To select dev state, initialize with `terraform init -backend-config=env/backend-dev.hcl -reconfigure`. Use the matching staging or prod backend file when changing environments.
 
 Docker tag and push commands run from any directory after the local image exists.
 
@@ -59,6 +59,7 @@ Account prints 526404916929, and Arn is an SSO role for the learning-dev account
 - Terraform root: `infra/terraform/`
 - Local Kubernetes manifests: `infra/k8s/dev/`
 - EKS Kubernetes manifests: `infra/k8s/eks-dev/`
+- Production EKS Kubernetes manifests: `infra/k8s/eks-prod/`
 - Backend Docker context: `Skin_Lesion_Classification_backend/`
 - Create or edit Terraform files under `infra/terraform/` and EKS Kubernetes YAML under the exact `infra/k8s/eks-dev/...` path named by the step.
 - Keep `infra/k8s/dev/` local-only. Do not replace its `skin-lesion-backend:local` image with an ECR URI.
@@ -80,6 +81,7 @@ Run from `infra/terraform`:
 
 ```powershell
 terraform fmt -recursive
+terraform init -backend-config=env/backend-dev.hcl -reconfigure
 terraform validate
 terraform plan -var-file="env/dev.tfvars"
 ```
@@ -98,7 +100,7 @@ If this fails with an S3 backend `Forbidden` error, refresh the SSO profile from
 aws sso login --profile skin-lesion-learning-dev
 $env:AWS_PROFILE = "skin-lesion-learning-dev"
 cd infra/terraform
-terraform init
+terraform init -backend-config=env/backend-dev.hcl -reconfigure
 terraform validate
 ```
 
@@ -141,6 +143,14 @@ Add a guide-08 statement that permits this dev EKS lesson. Keep the earlier STS,
     "eks:DescribeCluster",
     "eks:ListClusters",
     "eks:UpdateClusterConfig",
+    "eks:CreateAccessEntry",
+    "eks:DeleteAccessEntry",
+    "eks:DescribeAccessEntry",
+    "eks:ListAccessEntries",
+    "eks:UpdateAccessEntry",
+    "eks:AssociateAccessPolicy",
+    "eks:DisassociateAccessPolicy",
+    "eks:ListAssociatedAccessPolicies",
     "eks:TagResource",
     "eks:UntagResource",
     "iam:CreateRole",
@@ -151,13 +161,25 @@ Add a guide-08 statement that permits this dev EKS lesson. Keep the earlier STS,
     "iam:UntagRole",
     "iam:AttachRolePolicy",
     "iam:DetachRolePolicy",
-    "iam:ListAttachedRolePolicies"
+    "iam:ListAttachedRolePolicies",
+    "ec2:CreateSecurityGroup",
+    "ec2:DeleteSecurityGroup",
+    "ec2:DescribeSecurityGroups",
+    "ec2:AuthorizeSecurityGroupIngress",
+    "ec2:AuthorizeSecurityGroupEgress",
+    "ec2:RevokeSecurityGroupIngress",
+    "ec2:RevokeSecurityGroupEgress",
+    "ec2:CreateVpcEndpoint",
+    "ec2:DeleteVpcEndpoints",
+    "ec2:DescribeVpcEndpoints",
+    "ec2:ModifyVpcEndpoint",
+    "ec2:DescribeVpcEndpointServices"
   ],
   "Resource": "*"
 }
 ```
 
-**What this permits:** Terraform can create the EKS cluster role, the EKS Auto Mode node role, attach the required AWS-managed policies, pass those roles to EKS, and create or delete the dev cluster.
+**What this permits:** Terraform can create the EKS cluster role, the EKS Auto Mode node role, attach the required AWS-managed policies, pass those roles to EKS, create or delete the staging cluster, and manage the EKS access entries that are required by `authentication_mode = "API_AND_CONFIG_MAP"`. The VPC endpoint and security group actions let private EKS nodes pull images from ECR without adding a NAT gateway.
 
 After saving and provisioning the permission set, refresh your local SSO session:
 
@@ -358,9 +380,10 @@ resource "aws_iam_role_policy_attachment" "eks_ecr_pull_only" {
 }
 
 resource "aws_eks_cluster" "main" {
-  name     = var.cluster_name
-  role_arn = aws_iam_role.eks_cluster.arn
-  version  = "1.31"
+  name                          = var.cluster_name
+  role_arn                      = aws_iam_role.eks_cluster.arn
+  version                       = "1.31"
+  bootstrap_self_managed_addons = false
 
   access_config {
     authentication_mode                         = "API_AND_CONFIG_MAP"
@@ -425,7 +448,7 @@ output "kubeconfig_certificate_authority_data" {
 - `variable` blocks - the module inputs: cluster name, VPC ID, private app subnet IDs, environment, and project tag.
 - `aws_iam_role "eks_cluster"` - creates an IAM role that the EKS control plane assumes to manage cluster resources. The trust policy allows the EKS service to assume and tag the session.
 - `aws_iam_role_policy_attachment` blocks for the cluster role - attach the AWS-managed EKS Auto Mode policies for cluster, compute, block storage, load balancing, and networking responsibilities.
-- `aws_eks_cluster "main"` - creates the EKS cluster itself. `version = "1.31"` pins the Kubernetes version. `vpc_config` places the cluster into the VPC subnets from the networking guide. `endpoint_public_access = true` allows `kubectl` access from your laptop (set to `false` for production clusters accessible only from within the VPC).
+- `aws_eks_cluster "main"` - creates the EKS cluster itself. `version = "1.31"` pins the Kubernetes version. `bootstrap_self_managed_addons = false` is required when EKS Auto Mode is enabled, because Auto Mode manages the default add-on path. `vpc_config` places the cluster into the VPC subnets from the networking guide. `endpoint_public_access = true` allows `kubectl` access from your laptop (set to `false` for production clusters accessible only from within the VPC).
 - `compute_config` with `enabled = true` turns on EKS Auto Mode - AWS automatically provisions, scales, and upgrades EC2 nodes. `node_pools = ["general-purpose"]` uses the standard pool. You do not manage node groups or launch templates manually.
 - `kubernetes_network_config.elastic_load_balancing.enabled = true` - lets EKS Auto Mode provision AWS Load Balancers for Kubernetes Services of type `LoadBalancer`.
 - `storage_config.block_storage.enabled = true` - lets EKS Auto Mode provision EBS volumes for Kubernetes PersistentVolumeClaims.
@@ -470,6 +493,62 @@ resource "aws_subnet" "private_app_b" {
 
 **What this subnet does:** gives EKS a second app subnet in a second Availability Zone. The Kubernetes tag marks the subnet as eligible for internal load balancers later. This guide still uses a `ClusterIP` Service and `kubectl port-forward`; public ingress waits for guide 09.
 
+Because the EKS nodes live in private app subnets, they also need private paths to AWS services used during image pulls. Add VPC endpoints in `infra/terraform/main.tf`:
+
+```hcl
+resource "aws_security_group" "vpc_endpoints" {
+  name        = "${var.project_name}-vpc-endpoints-${var.environment}"
+  description = "Allow private app subnets to reach AWS service endpoints"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    description = "HTTPS from private app subnets"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = [
+      aws_subnet.private_app_a.cidr_block,
+      aws_subnet.private_app_b.cidr_block,
+    ]
+  }
+
+  egress {
+    description = "Endpoint responses"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+resource "aws_vpc_endpoint" "ecr_api" {
+  vpc_id              = aws_vpc.main.id
+  service_name        = "com.amazonaws.${var.aws_region}.ecr.api"
+  vpc_endpoint_type   = "Interface"
+  private_dns_enabled = true
+  subnet_ids          = [aws_subnet.private_app_a.id, aws_subnet.private_app_b.id]
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+}
+
+resource "aws_vpc_endpoint" "ecr_dkr" {
+  vpc_id              = aws_vpc.main.id
+  service_name        = "com.amazonaws.${var.aws_region}.ecr.dkr"
+  vpc_endpoint_type   = "Interface"
+  private_dns_enabled = true
+  subnet_ids          = [aws_subnet.private_app_a.id, aws_subnet.private_app_b.id]
+  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+}
+
+resource "aws_vpc_endpoint" "s3" {
+  vpc_id            = aws_vpc.main.id
+  service_name      = "com.amazonaws.${var.aws_region}.s3"
+  vpc_endpoint_type = "Gateway"
+  route_table_ids   = [aws_vpc.main.default_route_table_id]
+}
+```
+
+**What these endpoints do:** `ecr.api` lets the node ask ECR for image metadata and authorization, `ecr.dkr` lets the container runtime talk to the Docker registry API, and the S3 gateway endpoint lets ECR image layers download from S3 without public internet. Without these endpoints or a NAT gateway, pods can stay in `ImagePullBackOff` with ECR timeout messages.
+
 Update `infra/terraform/outputs.tf`:
 
 ```hcl
@@ -496,7 +575,7 @@ terraform validate
 If `terraform validate` says the module is not installed, run:
 
 ```powershell
-terraform init
+terraform init -backend-config=env/backend-dev.hcl -reconfigure
 terraform validate
 ```
 
@@ -569,6 +648,30 @@ kubectl rollout status deployment/skin-lesion-backend -n skin-lesion-dev
 
 **What these commands do:** `kubectl apply -f infra/k8s/eks-dev/` applies the EKS-specific YAML files to the `skin-lesion-dev` namespace in EKS. `kubectl rollout status` blocks until all replicas are up and the readiness probe passes, then prints `successfully rolled out`.
 
+## Production Manifest Directory And TLS Placeholders
+
+The repository now also contains `infra/k8s/eks-prod/`. It mirrors the staging structure with a production namespace, a two-replica backend Deployment, Service, Ingress, IngressClass, ServiceAccount, HPA, PodDisruptionBudget, and NetworkPolicy. Do not apply this folder until the production Terraform environment, image, and approval process are ready.
+
+The ingress manifests in `eks-dev`, `eks-staging`, and `eks-prod` now include HTTPS annotations:
+
+```yaml
+alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+alb.ingress.kubernetes.io/certificate-arn: "REPLACE_WITH_ACM_CERTIFICATE_ARN"
+alb.ingress.kubernetes.io/ssl-redirect: "443"
+```
+
+Before these annotations can provide TLS, you need an owned domain, an ACM certificate validated for that domain, and DNS pointed at the ALB. Replace the certificate ARN placeholder only with that validated certificate ARN.
+
+Check from the repo root after the ALB and certificate are configured:
+
+```powershell
+kubectl describe ingress skin-lesion-backend -n skin-lesion-staging
+```
+
+Expected result: the ingress shows its ALB address and no certificate-related events. Until the domain and certificate are ready, do not treat the HTTPS placeholder as a working endpoint.
+
+Why: an ALB cannot terminate trusted HTTPS traffic from a placeholder. The manifest keeps the required settings visible without pretending TLS is configured.
+
 ## Stop Point
 
 Do not add production deployment automation until manual EKS deploy works.
@@ -626,3 +729,74 @@ make cloud-status ENV=dev
 **What this command block does:** `make cloud-start ENV=dev` recreates or resumes the dev environment. `make cloud-status ENV=dev` confirms everything is healthy before continuing.
 
 If this guide was local-only, no cloud shutdown is needed.
+
+## Staging Observation Note - 2026-06-21
+
+Use this note when the staging backend is already deployed to EKS and you want to observe the current app behavior from the local frontend.
+
+Run from:
+
+```text
+C:\Users\saiyu\Desktop\projects\KI_projects\Skin_Lesion_GRADCAM_Classification
+```
+
+Open a backend tunnel:
+
+```powershell
+kubectl port-forward -n skin-lesion-staging svc/skin-lesion-backend 18083:8080
+```
+
+Check the backend:
+
+```powershell
+curl.exe -i http://localhost:18083/health
+curl.exe -s http://localhost:18083/api/v1/research/metrics/dataset
+curl.exe -s http://localhost:18083/api/v1/research/active-learning/queue
+```
+
+Expected result:
+
+```text
+/health returns {"status":"ok"}.
+Research endpoints return JSON.
+If no staging database is attached yet, the JSON says data_status is database_unavailable.
+```
+
+Test an analysis upload:
+
+```powershell
+curl.exe -s -F "image=@C:\Users\saiyu\Downloads\M1650261.jpg" -F "storage_mode=history" http://localhost:18083/api/v1/analysis
+```
+
+Expected result:
+
+```text
+The response echoes storage_mode, returns image_quality fields, and includes model_status.
+If no trained checkpoint is present in the backend image, model_status is untrained_stub and the warning says the prediction is not clinically meaningful.
+```
+
+Start the frontend against the tunnel:
+
+```powershell
+cd C:\Users\saiyu\Desktop\projects\KI_projects\Skin_Lesion_GRADCAM_Classification\Skin_Lesion_Classification_frontend
+C:\Users\saiyu\AppData\Roaming\npm\npm.cmd run build
+.\node_modules\.bin\next.cmd start -p 3001
+```
+
+Open:
+
+```text
+http://localhost:3001/research
+http://localhost:3001/analyze
+```
+
+Current limitation:
+
+```text
+The EKS backend is deployed, but the staging database is not attached to the pod yet.
+Research dashboards must show database_unavailable instead of fake rows.
+The analysis endpoint accepts the image, but the model remains an untrained_stub until a trained checkpoint or MLflow model artifact is wired into staging.
+Storage mode is sent to the backend and echoed in the response; durable image-history storage is still a later product/staging integration step.
+```
+
+Why this note exists: it separates a working deployment check from full product readiness. A healthy pod and frontend route do not mean dashboards have real database data or that the ML model artifact is production-ready.

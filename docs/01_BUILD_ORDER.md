@@ -163,6 +163,7 @@ Build:
 - Terraform VPC
 - Terraform parameters and remote state bootstrap
 - Terraform storage, secrets, and ECR
+- per-environment Terraform state selection and Cognito foundation
 - local Kubernetes
 - ECR and EKS dev path
 - EKS Ingress and AWS Load Balancer Controller
@@ -176,6 +177,7 @@ Build:
 - local-to-staging-to-production promotion map
 - ElastiCache Redis after local Redis and staging VPC basics exist
 - MLflow server after the training pipeline and model registry guide works locally
+- Vercel frontend route wiring audit after frontend staging exists
 
 Pass check:
 
@@ -184,6 +186,16 @@ make docs-check
 ```
 
 What this command does: validates that the documentation order and links still work while staging guides evolve.
+
+When you initialize Terraform for an AWS environment, run the command from `infra/terraform` with that environment's backend file. For example, staging uses:
+
+```powershell
+terraform init -backend-config=env/backend-staging.hcl -reconfigure
+```
+
+This selects the isolated `staging/terraform.tfstate` key. Do this every time you switch Terraform environments so staging does not share dev state.
+
+The backend deployment workflows are in the separate `Skin_Lesion_Classification_backend` GitHub repository, because that is where the backend source code is tracked. The parent repository keeps its docs and Terraform checks only. Follow `staging/17_CICD_HANDHOLDING.md` when manual staging deployment works.
 
 Run environment-specific checks from the guide you are following, such as:
 
@@ -230,6 +242,8 @@ Follow this staging order exactly:
 18. Power BI embedded analytics
 19. ElastiCache Redis
 20. MLflow server
+21. Vercel frontend staging
+22. Frontend route wiring audit
 ```
 
 What this staging order does:
@@ -237,7 +251,7 @@ What this staging order does:
 - Starts with cost controls before any cloud resources are created.
 - Builds Docker and Terraform basics before Kubernetes.
 - Adds networking, storage, secrets, databases, and events before observability and CI/CD.
-- Leaves Power BI, Redis, and MLflow until the underlying app and staging infrastructure are ready.
+- Leaves Power BI, Redis, MLflow, and Vercel frontend hosting until the underlying app and staging infrastructure are ready.
 
 ## Phase 4: Embedded Analytics With Power BI
 

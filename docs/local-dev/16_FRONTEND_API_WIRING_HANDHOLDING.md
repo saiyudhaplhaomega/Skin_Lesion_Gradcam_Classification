@@ -40,6 +40,16 @@ Backend API verification commands run from:
 Skin_Lesion_Classification_backend
 ```
 
+## Repo And File Map
+
+- Main workspace: `C:\Users\saiyu\Desktop\projects\KI_projects\Skin_Lesion_GRADCAM_Classification`
+- Frontend repo: `Skin_Lesion_Classification_frontend/`
+- Backend repo: `Skin_Lesion_Classification_backend/`
+- Edit frontend API client and page files under `Skin_Lesion_Classification_frontend/`.
+- Use the backend repo only to verify that the FastAPI endpoints are running.
+
+**What this means:** all frontend implementation paths in this guide are relative to `Skin_Lesion_Classification_frontend/`, while backend checks only confirm the API is reachable.
+
 ## Account And Identity Map
 
 This guide is **local-only**. No AWS account access is needed. No SSO login is needed. No Terraform commands are run.

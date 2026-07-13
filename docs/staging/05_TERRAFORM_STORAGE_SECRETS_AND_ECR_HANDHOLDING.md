@@ -21,7 +21,7 @@ Before Step 1, confirm all of these are done:
 1. Guide 02 created `infra/terraform/main.tf` with the provider block and `terraform init` works.
 2. Guide 03 created the VPC and three subnets in `main.tf` and `terraform plan` shows 4 resources.
 3. Guide 04 created the remote state S3 bucket and DynamoDB lock table.
-4. Guide 04 created `infra/terraform/backend.tf` and `terraform init` connected to the S3 backend.
+4. Guide 04 created `infra/terraform/backend.tf`. It contains the shared S3 backend settings, while each environment now supplies its own state key.
 5. Guide 04 created `infra/terraform/env/dev.tfvars` with `environment`, `project_name`, and `aws_region`.
 
 If any of these are missing, go back and complete the referenced guide first.
@@ -72,11 +72,108 @@ Every file this guide touches, in the order the steps touch it:
 Files this guide does **not** touch:
 
 ```text
-infra/terraform/backend.tf     — created in guide 04, do not modify
-infra/terraform/.terraform.lock.hcl — created in guide 02, do not modify
+infra/terraform/backend.tf     - created in guide 04, do not modify
+infra/terraform/env/backend-dev.hcl - selects the dev state key
+infra/terraform/env/backend-staging.hcl - selects the staging state key
+infra/terraform/env/backend-prod.hcl - selects the prod state key
+infra/terraform/.terraform.lock.hcl - created in guide 02, do not modify
 ```
 
 Do not create backend or frontend application files in this guide. This guide only creates Terraform configuration files.
+
+## State Isolation Update
+
+The backend S3 bucket is still shared, but Terraform state is no longer shared between environments. `infra/terraform/backend.tf` deliberately has no `key` setting. The key comes from one of these existing files:
+
+```text
+infra/terraform/env/backend-dev.hcl      -> dev/terraform.tfstate
+infra/terraform/env/backend-staging.hcl  -> staging/terraform.tfstate
+infra/terraform/env/backend-prod.hcl     -> prod/terraform.tfstate
+```
+
+Before any Terraform command that reads or changes remote state, change to `infra/terraform` and initialize the intended environment:
+
+```powershell
+terraform init -backend-config=env/backend-dev.hcl -reconfigure
+```
+
+For staging or prod, replace `dev` with `staging` or `prod`. `-reconfigure` makes Terraform discard the previous backend selection for this working directory and use the key you named.
+
+Check from `infra/terraform`:
+
+```powershell
+terraform state list
+```
+
+Expected result: Terraform reads only the selected environment state. A staging apply cannot write into the dev state file.
+
+Why: the earlier single key meant a staging command could have used the same state as dev. Separate keys keep Terraform's record of each environment isolated.
+
+## Pre-deploy Terraform Additions
+
+The current Terraform root has several additions that were made after the original storage and ECR walkthrough. They are configuration only until you intentionally apply an environment.
+
+### Cognito Module And Outputs
+
+`infra/terraform/modules/cognito/` now defines the Cognito resources. The root module creates them when `enable_cognito = true`, which is the default. It creates one User Pool, a public app client with no client secret, and the `patient`, `doctor`, `admin`, and `research_reviewer` groups.
+
+After a successful apply, run this from `infra/terraform`:
+
+```powershell
+terraform output cognito_user_pool_id
+terraform output cognito_user_pool_client_id
+terraform output cognito_region
+```
+
+Expected result: Terraform prints the User Pool ID, public client ID, and AWS region. Give these values to the frontend as its `NEXT_PUBLIC_COGNITO_USER_POOL_ID`, `NEXT_PUBLIC_COGNITO_CLIENT_ID`, and `NEXT_PUBLIC_COGNITO_REGION` settings. They are public client identifiers, not secrets.
+
+Why: the backend and frontend both expect Cognito bearer-token authentication. This module supplies the matching AWS identity resources instead of leaving those settings as placeholders.
+
+### GitHub OIDC Deploy Role
+
+`infra/terraform/github_actions.tf` creates the GitHub OIDC trust and an environment-scoped deployment role for `saiyudhaplhaomega/Skin_Lesion_Classification_backend`. It replaces long-lived GitHub AWS access keys.
+
+Apply staging first. The OIDC provider is an AWS-account-global resource, so Terraform creates it only from the staging state. Dev and prod use the same provider after staging has created it.
+
+After the staging apply, run this from `infra/terraform`:
+
+```powershell
+terraform output github_actions_deploy_role_arn
+```
+
+Expected result: Terraform prints an IAM role ARN. Add that exact value as the `AWS_DEPLOY_ROLE_ARN` secret in the separate backend GitHub repository. Do not add static `AWS_ACCESS_KEY_ID` or `AWS_SECRET_ACCESS_KEY` secrets for this workflow.
+
+Why: GitHub Actions exchanges its short-lived OIDC token for this role only during a permitted backend-repository deployment.
+
+### DSQL Safety And Pod Identity
+
+Aurora DSQL now uses deletion protection for staging and prod, plus a Terraform `prevent_destroy` lifecycle guard in its module. DSQL access is no longer attached to the shared EKS node role. Instead, Terraform creates an IRSA role trusted only by the `skin-lesion-backend` ServiceAccount in the supported namespaces.
+
+After applying an environment with `enable_aurora_dsql = true`, run this from `infra/terraform`:
+
+```powershell
+terraform output dsql_workload_role_arn
+```
+
+Expected result: Terraform prints the workload role ARN. Replace `REPLACE_WITH_TERRAFORM_OUTPUT_dsql_workload_role_arn` in that environment's Kubernetes `serviceaccount.yaml` with this value before applying the workload manifests.
+
+Why: an application pod receives only the DSQL permission it needs, rather than giving database access to every workload that uses the node role.
+
+### Key Rotation And Cost Guardrail
+
+The existing KMS key now sets `enable_key_rotation = true`, so AWS rotates its key material automatically without changing the key ARN used by buckets and secrets.
+
+`infra/terraform/budget.tf` also creates a monthly AWS cost budget when `enable_cost_budget = true`, which is the default. `monthly_budget_limit_usd` defaults to `100`, and `alert_email` receives actual and forecasted alerts at 80% and 100%.
+
+Before applying, set a real alert email in the environment tfvars. Check the planned budget from `infra/terraform`:
+
+```powershell
+terraform plan -var-file="env/staging.tfvars"
+```
+
+Expected result: the plan includes a monthly cost budget and its four notification thresholds when the feature is enabled.
+
+Why: the budget gives an early warning before a staging experiment becomes an unexpected monthly bill.
 
 ## Account And Identity Map
 
@@ -563,14 +660,22 @@ SkinLesionVpcLearning
     "secretsmanager:DeleteSecret",
     "secretsmanager:DescribeSecret",
     "secretsmanager:GetSecretValue",
+    "secretsmanager:GetResourcePolicy",
     "secretsmanager:PutSecretValue",
+    "secretsmanager:PutResourcePolicy",
+    "secretsmanager:DeleteResourcePolicy",
+    "secretsmanager:ValidateResourcePolicy",
+    "secretsmanager:ListSecretVersionIds",
     "secretsmanager:ListSecrets",
     "secretsmanager:TagResource",
     "secretsmanager:UntagResource",
     "secretsmanager:RotateSecret",
     "secretsmanager:UpdateSecret"
   ],
-  "Resource": "arn:aws:secretsmanager:us-east-1:526404916929:secret:skin-lesion/dev/*"
+  "Resource": [
+    "arn:aws:secretsmanager:us-east-1:526404916929:secret:skin-lesion/dev/*",
+    "arn:aws:secretsmanager:us-east-1:526404916929:secret:skin-lesion/staging/*"
+  ]
 },
 {
   "Sid": "AllowECRLearning",
@@ -602,7 +707,7 @@ SkinLesionVpcLearning
 
 - `AllowKmsLearning` - lets Terraform create and manage a KMS key and alias. `Resource: "*"` is required because KMS keys do not have ARNs until they are created.
 - `AllowS3AppBucketsLearning` - lets Terraform create and manage the upload, training, and log buckets. The resource pattern `skin-lesion-*-dev-*` scopes access to only this project's dev buckets.
-- `AllowSecretsManagerLearning` - lets Terraform create and manage secret placeholders under the `skin-lesion/dev/` path. The trailing `/*` matches any secret name under that prefix.
+- `AllowSecretsManagerLearning` - lets Terraform create and manage secret placeholders under the `skin-lesion/dev/` and `skin-lesion/staging/` paths. The trailing `/*` matches the random suffix that AWS Secrets Manager adds to each secret ARN. Terraform also reads each secret resource policy after creation, so `GetResourcePolicy` is required even when this guide does not attach a custom policy yet.
 - `AllowECRLearning` - lets Terraform create and manage the ECR repository and lets you push images to it later. `ecr:GetAuthorizationToken` and the push actions are included so you can push images from the same SSO session in later guides.
 
 10. Click `Save changes` (or `Save`).
@@ -1286,6 +1391,8 @@ infra/terraform/outputs.tf
 7. Click `Save`.
 
 **What this file is:** Terraform output declarations. Outputs are values that Terraform computes after `apply` and prints to the terminal. They are also stored in the state file so later guides can reference them. Outputs do not create cloud resources.
+
+This code block is the original Guide 05 checkpoint. If you are updating the current repository instead of building from that checkpoint, do not replace the existing `infra/terraform/outputs.tf` with only this block. Keep its later outputs, including `dsql_workload_role_arn`, `cognito_user_pool_id`, `cognito_user_pool_client_id`, `cognito_region`, and `github_actions_deploy_role_arn`.
 
 **What to paste into the file:**
 

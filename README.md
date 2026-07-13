@@ -69,6 +69,14 @@ docs/product/14_ROLE_BASED_EVOLVING_AGENTS_HANDHOLDING.md
 
 Clinical explanations, admin market research, doctor workflow support, customer education, and research/fairness summaries must use separate data boundaries and approval rules.
 
+RAG evaluation, model evaluation, and Claude/Codex/MiniMax handoff planning live in:
+
+```text
+docs/07_RAG_EVAL_AND_MULTI_AGENT_EXECUTION_PLAN.md
+```
+
+Use that guide before adding more RAG features or promoting the 14-class/12-class XAI models into backend-facing workflows.
+
 ## Current Rule
 
 No GitHub Actions workflows are included right now.

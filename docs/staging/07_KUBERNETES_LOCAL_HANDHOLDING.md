@@ -1,34 +1,22 @@
-# Local Kubernetes Handholding Guide
+# Local Kubernetes Verification Handholding Guide
 
-Use this after Docker works.
+Use this after `docs/staging/06_KUBERNETES_AFTER_DOCKER.md` completes successfully.
 
-## Cross-Reference: Guide 06 Already Created The Same Manifests
-
-If you completed `docs/staging/06_KUBERNETES_AFTER_DOCKER.md`, the `infra/k8s/dev/` directory already contains `namespace.yaml`, `deployment.yaml`, and `service.yaml`. This guide is an alternate path that uses a slightly different deployment pattern:
-
-| Aspect | Guide 06 pattern | Guide 07 pattern |
-|--------|------------------|------------------|
-| Image pull | Local Docker cache (default) | `imagePullPolicy: Never` (explicit) |
-| Probes | `/health` port 8080, with timing | `/health` port 8080, with timing |
-| Service | ClusterIP port 8080:8080 | ClusterIP port 8080:8080 |
-| Resource limits | CPU/memory requests + limits | (not specified in this guide) |
-
-Both guides target the same `docker-desktop` Kubernetes cluster and produce a working backend pod reachable via `kubectl port-forward`. Pick one and follow it.
-
-**Before starting Step 1 below, check whether the manifests already exist from guide 06:**
-
-```powershell
-Test-Path C:\Users\saiyu\Desktop\projects\KI_projects\Skin_Lesion_GRADCAM_Classification\infra\k8s\dev```
-
-If this returns `True`, the directory exists. You can:
-- **Option A** — Continue with guide 06's manifests as they are. Skip Steps 1-4 below and go directly to the Kubernetes Checks section.
-- **Option B** — Overwrite with this guide's slightly-different manifest versions. Follow Steps 1-4 below.
-
-If this returns `False`, the directory does not exist. Follow Steps 1-4 below to create it from scratch.
+Guide 06 creates the local Kubernetes namespace, Deployment, and Service. This guide does **not** repeat those setup steps. It is the checkpoint that confirms the manifests are stable, local-only, and ready to adapt for ECR/EKS in guide 08.
 
 ## Goal
 
-Run the backend container in local Kubernetes.
+Prove that the local Kubernetes files created in guide 06 are complete enough to become the base for the cloud deployment path.
+
+At the end of this guide you should know:
+
+- the backend image exists locally
+- Docker Desktop Kubernetes is running
+- `infra/k8s/dev/namespace.yaml` exists and applies cleanly
+- `infra/k8s/dev/deployment.yaml` uses the local image intentionally
+- `infra/k8s/dev/service.yaml` routes to the backend pod
+- `kubectl port-forward` can reach `GET /health`
+- no AWS, ECR, EKS, Ingress, ALB, WAF, or autoscaling work has started yet
 
 ## Command Location
 
@@ -38,220 +26,465 @@ Start from the repo root:
 cd C:\Users\saiyu\Desktop\projects\KI_projects\Skin_Lesion_GRADCAM_Classification
 ```
 
-**What this does:** moves to the workspace root so that `kubectl` commands can reference `infra/k8s/dev/` with relative paths.
+**What this does:** moves to the main workspace. Every command in this guide runs from this directory unless a step explicitly says otherwise.
 
-Create all Kubernetes YAML files under:
+The files checked or edited in this guide are:
 
 ```text
-infra/k8s/dev
+infra/k8s/dev/namespace.yaml
+infra/k8s/dev/deployment.yaml
+infra/k8s/dev/service.yaml
 ```
 
-**What this directory is:** the folder that holds all Kubernetes manifest files for the local dev cluster. Files created here are applied with `kubectl apply -f infra/k8s/dev/`.
-
-Run every `kubectl` command in this guide from the repo root.
+**What these files are:** the local Kubernetes manifests created in guide 06. They are the source of truth for the local cluster before guide 08 copies the pattern to EKS with an ECR image.
 
 ## Repo And File Map
 
 - Main workspace: `C:\Users\saiyu\Desktop\projects\KI_projects\Skin_Lesion_GRADCAM_Classification`
 - Local Kubernetes manifests: `infra/k8s/dev/`
-- Create or edit every YAML file in this guide under `infra/k8s/dev/`.
-- Run `kubectl` commands from the main workspace unless the step explicitly says otherwise.
+- Backend Docker context: `Skin_Lesion_Classification_backend/`
+- Do not create cloud manifests in this guide.
+- Do not create `infra/k8s/staging/`, Ingress, ALB, EKS, or WAF files in this guide.
 
-## Step 1: Create Folder
+## Account And Identity Map
 
-**Skip this step if you already created `infra/k8s/dev/` in guide 06.** Run `Test-Path` first:
+This guide is **local-only**.
 
-```powershell
-Test-Path C:\Users\saiyu\Desktop\projects\KI_projects\Skin_Lesion_GRADCAM_Classification\infra\k8s\dev
-```
+No AWS Console access is needed. No AWS SSO login is needed. No Terraform commands are run. No ECR image is pushed.
 
-If the result is `True`, the folder exists. Skip this Step and continue to Step 2's `kubectl apply` command directly. If the result is `False`, create this folder:
+## Prerequisites
+
+Complete guide 06 first:
 
 ```text
-infra/k8s/dev/
+docs/staging/06_KUBERNETES_AFTER_DOCKER.md
 ```
 
-## Step 2: Namespace
+Guide 06 should already have created these files:
 
-**Skip this step if you already created `infra/k8s/dev/namespace.yaml` in guide 06.** If it exists, jump directly to the `kubectl apply -f infra/k8s/dev/namespace.yaml` command below. Otherwise:
+```text
+infra/k8s/dev/namespace.yaml
+infra/k8s/dev/deployment.yaml
+infra/k8s/dev/service.yaml
+```
 
-Create `infra/k8s/dev/namespace.yaml`:
+Run from the repo root:
+
+```powershell
+Test-Path infra/k8s/dev/namespace.yaml
+Test-Path infra/k8s/dev/deployment.yaml
+Test-Path infra/k8s/dev/service.yaml
+```
+
+Expected result:
+
+```text
+True
+True
+True
+```
+
+**What this confirms:** guide 06 created the local Kubernetes files. If any value is `False`, stop and return to guide 06. Do not recreate the same files from this guide.
+
+Why: this guide is a verification and hardening gate, not a second Kubernetes setup path. Keeping one setup guide prevents the sequence from splitting.
+
+## Step 1: Confirm Docker And Kubernetes Are Available
+
+Run from the repo root:
+
+```powershell
+docker version
+kubectl version --client
+kubectl config current-context
+kubectl get nodes
+```
+
+Expected result:
+
+```text
+docker version prints both Client and Server information.
+kubectl version --client prints a client version.
+kubectl config current-context prints docker-desktop.
+kubectl get nodes shows a Ready node.
+```
+
+**What these commands do:**
+
+- `docker version` confirms Docker Desktop is running.
+- `kubectl version --client` confirms the Kubernetes CLI is installed.
+- `kubectl config current-context` confirms which cluster your commands will target.
+- `kubectl get nodes` confirms the local Kubernetes control plane is reachable.
+
+Why: if the context is not `docker-desktop`, you might accidentally apply local dev manifests to another cluster.
+
+Do not continue until the current context is:
+
+```text
+docker-desktop
+```
+
+## Step 2: Confirm The Local Backend Image Exists
+
+Run from the repo root:
+
+```powershell
+docker images skin-lesion-backend:local
+```
+
+Expected result:
+
+```text
+REPOSITORY            TAG     IMAGE ID       CREATED       SIZE
+skin-lesion-backend   local   <image-id>     <time>        <size>
+```
+
+If the image is missing, rebuild it from the backend repo:
+
+```powershell
+cd C:\Users\saiyu\Desktop\projects\KI_projects\Skin_Lesion_GRADCAM_Classification\Skin_Lesion_Classification_backend
+docker build -t skin-lesion-backend:local .
+cd C:\Users\saiyu\Desktop\projects\KI_projects\Skin_Lesion_GRADCAM_Classification
+```
+
+Check again:
+
+```powershell
+docker images skin-lesion-backend:local
+```
+
+**What this does:** confirms the image tag that the local Kubernetes Deployment references exists in Docker Desktop's local image cache.
+
+Why: guide 08 will push an ECR-tagged copy later, but guide 07 should still use the local image only.
+
+## Step 3: Harden The Deployment Manifest For Local Image Use
+
+Open this file:
+
+```text
+infra/k8s/dev/deployment.yaml
+```
+
+Make sure it contains this exact container block:
 
 ```yaml
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: skin-lesion-dev
+      containers:
+        - name: skin-lesion-backend
+          image: skin-lesion-backend:local
+           imagePullPolicy: Never
+           ports:
+             - containerPort: 8080
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 0
+            periodSeconds: 10
+            failureThreshold: 18
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 250m
+              memory: 1Gi
+            limits:
+              cpu: 1000m
+              memory: 2Gi
 ```
 
-**What this YAML does:** creates a Kubernetes namespace called `skin-lesion-dev`. A namespace is a logical partition inside the cluster - pods, services, and deployments in this namespace are isolated from other namespaces. All resources in this guide live inside `skin-lesion-dev`.
+If `imagePullPolicy: Never` is missing, add it directly under:
+
+```yaml
+          image: skin-lesion-backend:local
+```
+
+Run from the repo root:
+
+```powershell
+kubectl apply --dry-run=client -f infra/k8s/dev/deployment.yaml
+```
+
+Expected result:
+
+```text
+deployment.apps/skin-lesion-backend configured (dry run)
+```
+
+**What this does:** checks the Deployment YAML locally without changing the cluster.
+
+Why: `imagePullPolicy: Never` makes the local intent explicit. Kubernetes should use the Docker Desktop image cache and should not try to pull `skin-lesion-backend:local` from a registry.
+
+The memory limit is intentionally `2Gi` for local Kubernetes. The backend image includes a Python, ML, and API stack, and a `512Mi` limit can cause Kubernetes to restart the container with `OOMKilled` before `/health` is ready.
+
+The `startupProbe` gives the backend up to 180 seconds to load its ML model before readiness and liveness checks begin. Without it, the normal model initialization period can look like a crash.
+
+## EKS Manifest Update: ServiceAccount, Scaling, And Network Boundaries
+
+The local `infra/k8s/dev/` manifests remain deliberately small. The EKS manifest folders now have the production-like objects that local Docker Desktop does not need:
+
+```text
+infra/k8s/eks-dev/
+infra/k8s/eks-staging/
+infra/k8s/eks-prod/
+```
+
+Each EKS folder includes a `serviceaccount.yaml` for `skin-lesion-backend`. The Deployment references it with `serviceAccountName: skin-lesion-backend`. Its annotation is intentionally a placeholder:
+
+```yaml
+eks.amazonaws.com/role-arn: "REPLACE_WITH_TERRAFORM_OUTPUT_dsql_workload_role_arn"
+```
+
+After Terraform applies DSQL, replace that text with the matching `terraform output dsql_workload_role_arn` value before applying the EKS manifests. Do not put the placeholder or an AWS ARN in the local `infra/k8s/dev/` Deployment.
+
+The same EKS folders now also include these resources:
+
+- `hpa.yaml` scales on CPU. Dev and staging allow 1 to 4 replicas, while prod allows 2 to 6.
+- `pdb.yaml` keeps at least one backend pod available during a voluntary disruption.
+- `networkpolicy.yaml` allows ingress from the AWS Load Balancer Controller and from pods in the same namespace, then blocks other pod ingress.
+
+Check an EKS environment from the repo root after applying its manifests:
+
+```powershell
+kubectl get serviceaccount,hpa,pdb,networkpolicy -n skin-lesion-staging
+```
+
+Expected result: Kubernetes lists the dedicated ServiceAccount, one HPA, one PodDisruptionBudget, and one NetworkPolicy for the backend.
+
+Why: the ServiceAccount is the narrow identity boundary for DSQL, while the other resources make rollouts, load changes, and network access safer in EKS.
+
+## Step 4: Apply The Existing Local Manifests
 
 Run from the repo root:
 
 ```powershell
 kubectl apply -f infra/k8s/dev/namespace.yaml
-kubectl get namespace skin-lesion-dev
-```
-
-**What these commands do:** `kubectl apply -f` reads the YAML file and creates the namespace in the cluster if it does not exist. `kubectl get namespace skin-lesion-dev` confirms the namespace was created and shows its status (should be `Active`).
-
-## Step 3: Deployment
-
-**Skip this step if you already created `infra/k8s/dev/deployment.yaml` in guide 06.** If it exists, jump directly to the `kubectl apply -f infra/k8s/dev/deployment.yaml` command at the end of this Step. Otherwise, follow the instructions below to create the deployment manifest.
-
-Create `infra/k8s/dev/deployment.yaml`:
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: skin-lesion-backend
-  namespace: skin-lesion-dev
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: skin-lesion-backend
-  template:
-    metadata:
-      labels:
-        app: skin-lesion-backend
-    spec:
-      containers:
-        - name: backend
-          image: skin-lesion-backend:local
-          imagePullPolicy: Never
-          ports:
-            - containerPort: 8080
-          readinessProbe:
-            httpGet:
-              path: /health
-              port: 8080
-          livenessProbe:
-            httpGet:
-              path: /health
-              port: 8080
-```
-
-**What this YAML does:**
-
-- `kind: Deployment` - tells Kubernetes to manage a set of identical pods and keep the desired replica count running.
-- `replicas: 1` - run one pod. If it crashes, Kubernetes restarts it automatically.
-- `selector.matchLabels` and `template.metadata.labels` - both must have `app: skin-lesion-backend`. The Deployment uses these labels to know which pods it owns.
-- `image: skin-lesion-backend:local` - the locally built Docker image (from the Docker guide). Not pulled from a registry.
-- `imagePullPolicy: Never` - tells Kubernetes not to try pulling this image from the internet. Required when using a locally built image with a local cluster (Docker Desktop, minikube, kind).
-- `containerPort: 8080` - documents that the container listens on port 8080 (matches what FastAPI binds to).
-- `readinessProbe` - Kubernetes polls `GET /health` on port 8080. The pod only receives traffic after this probe succeeds. Prevents traffic from reaching a pod that is still starting up.
-- `livenessProbe` - Kubernetes polls the same endpoint continuously while the pod is running. If it fails repeatedly, Kubernetes kills and restarts the pod.
-
-Run from the repo root:
-
-```powershell
 kubectl apply -f infra/k8s/dev/deployment.yaml
-kubectl get pods -n skin-lesion-dev
-```
-
-**What these commands do:** `kubectl apply -f` creates the Deployment in the `skin-lesion-dev` namespace. `kubectl get pods -n skin-lesion-dev` lists the pods in that namespace - the pod should go from `Pending` to `Running` as Kubernetes pulls the image and starts the container. If readiness fails, it stays in `0/1 Running` with the Ready column showing `0`.
-
-## Step 4: Service
-
-**Skip this step if you already created `infra/k8s/dev/service.yaml` in guide 06.** If it exists, jump directly to the `kubectl apply -f infra/k8s/dev/service.yaml` command at the end of this Step. Otherwise, follow the instructions below to create the service manifest.
-
-Create `infra/k8s/dev/service.yaml`:
-
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: skin-lesion-backend
-  namespace: skin-lesion-dev
-spec:
-  selector:
-    app: skin-lesion-backend
-  ports:
-    - port: 8080
-      targetPort: 8080
-      protocol: TCP
-      name: http
-```
-
-**What this YAML does:**
-
-- `kind: Service` - creates a stable network name for pods so callers do not need to know individual pod IPs (which change on restart).
-- `selector: app: skin-lesion-backend` - routes traffic to any pod with this label. Matches the label from the Deployment.
-- `port: 8080` - the port the Service listens on. Other pods in the cluster connect to this port.
-- `targetPort: 8080` - the port on the pod that traffic is forwarded to. This matches `containerPort: 8080` in the Deployment.
-- `protocol: TCP` - the network protocol. HTTP runs over TCP.
-- `name: http` - a name for this port. Useful when a Service exposes multiple ports.
-
-Run from the repo root:
-
-```powershell
 kubectl apply -f infra/k8s/dev/service.yaml
-kubectl port-forward -n skin-lesion-dev service/skin-lesion-backend 8080:8080
 ```
-
-**What these commands do:** `kubectl apply -f` creates the Service in the `skin-lesion-dev` namespace. `kubectl port-forward` opens a tunnel from `localhost:8080` on your machine to port 8080 on the Service inside the cluster, which then forwards to port 8080 on the pod. This is a development-only workaround - no Ingress or load balancer is needed.
-
-In another terminal:
-
-```powershell
-curl http://localhost:8080/health
-```
-
-**What this does:** sends an HTTP GET through the port-forward tunnel to the pod's `/health` endpoint. If the pod is healthy and the Service is configured correctly, this returns `{"status":"ok"}`.
-
-## Kubernetes Checks
-
-```powershell
-kubectl get all -n skin-lesion-dev
-kubectl logs -n skin-lesion-dev deployment/skin-lesion-backend
-kubectl rollout status -n skin-lesion-dev deployment/skin-lesion-backend
-```
-
-**What these commands do:**
-
-- `kubectl get all -n skin-lesion-dev` - lists every resource in the namespace: the Deployment, ReplicaSet, Pod, and Service. Good quick-status view.
-- `kubectl logs -n skin-lesion-dev deployment/skin-lesion-backend` - prints the stdout/stderr output from the running container. Use this to see FastAPI startup messages or request logs.
-- `kubectl rollout status -n skin-lesion-dev deployment/skin-lesion-backend` - watches the rollout and blocks until all replicas are ready. Returns `successfully rolled out` when done, or reports a failure if pods cannot start.
 
 Expected result:
 
 ```text
-The namespace contains the backend Deployment and Service, logs are readable, and rollout status completes successfully.
+namespace/skin-lesion-dev configured
+deployment.apps/skin-lesion-backend configured
+service/skin-lesion-backend configured
 ```
 
-**What this means:** all three checks pass - the namespace has the right resources, the log output is readable, and the rollout finished without error. If `rollout status` hangs or fails, check `kubectl describe pod` for image pull or probe errors.
+**What this does:** applies the same three local manifests created in guide 06. If the resources already exist, Kubernetes updates them in place.
 
-Why: local Kubernetes proves manifests, probes, service routing, logs, and rollout behavior before paying for EKS.
+Why: re-applying the existing files confirms they are idempotent. You should be able to run the command more than once without creating duplicate resources.
 
-## Stop Point
-
-Only move to EKS after local Kubernetes works.
-
-## Cost Pause / Resume
-
-If this guide created or uses cloud resources, pause or shut them down before stopping for the day.
+## Step 5: Check Namespace, Pod, Deployment, And Service
 
 Run from the repo root:
 
 ```powershell
-make cloud-status ENV=dev
-make cloud-pause ENV=dev
-make cloud-shutdown ENV=dev CONFIRM_DESTROY=YES
+kubectl get namespace skin-lesion-dev
+kubectl get deployment -n skin-lesion-dev skin-lesion-backend
+kubectl get pods -n skin-lesion-dev -l app=skin-lesion-backend
+kubectl get service -n skin-lesion-dev skin-lesion-backend
 ```
 
-**What this command block does:** `make cloud-status ENV=dev` reports what dev cloud resources are currently running and their cost state. `make cloud-pause ENV=dev` scales pods to zero to stop compute charges. `make cloud-shutdown ENV=dev CONFIRM_DESTROY=YES` destroys all dev cloud resources - use this at the end of a work session to avoid overnight charges.
+Expected result:
 
-Use `ENV=staging` or `ENV=prod` only when you are intentionally working in that environment.
+```text
+The namespace is Active.
+The deployment shows 1/1 ready.
+The pod shows Running and Ready.
+The service shows TYPE ClusterIP and PORT 8080/TCP.
+```
 
-Before starting the next guide, resume the environment and re-run the guide's check command:
+**What these commands do:** inspect each resource by type so you can see exactly which layer is broken if something is wrong.
+
+Why: EKS troubleshooting later uses the same mental model: namespace first, then deployment, pod, and service.
+
+## Step 6: Confirm Rollout And Logs
+
+Run from the repo root:
 
 ```powershell
-make cloud-start ENV=dev
-make cloud-status ENV=dev
+kubectl rollout status -n skin-lesion-dev deployment/skin-lesion-backend
+kubectl logs -n skin-lesion-dev deployment/skin-lesion-backend --tail=50
 ```
 
-**What this command block does:** `make cloud-start ENV=dev` recreates or resumes the dev environment. `make cloud-status ENV=dev` confirms it came back healthy before you continue work.
+Expected result:
 
-If this guide was local-only, no cloud shutdown is needed.
+```text
+deployment "skin-lesion-backend" successfully rolled out
+```
+
+The log command should print backend startup or request logs.
+
+**What these commands do:**
+
+- `kubectl rollout status` waits until the Deployment has a ready pod.
+- `kubectl logs` proves you can read container logs through Kubernetes.
+
+Why: deployment status and logs are the first two checks you will use when the same app runs in EKS.
+
+## Step 7: Test The Service With Port Forwarding
+
+Open **Terminal A** from the repo root:
+
+```powershell
+kubectl port-forward -n skin-lesion-dev service/skin-lesion-backend 8080:8080
+```
+
+Expected result:
+
+```text
+Forwarding from 127.0.0.1:8080 -> 8080
+Forwarding from [::1]:8080 -> 8080
+```
+
+Keep Terminal A open.
+
+Open **Terminal B** from the repo root:
+
+```powershell
+curl http://127.0.0.1:8080/health
+```
+
+Expected result:
+
+```json
+{"status":"ok"}
+```
+
+**What this does:** sends a local HTTP request through the Kubernetes Service to the backend pod.
+
+Why: this proves the local manifest chain works from your laptop to Service to pod to FastAPI.
+
+When the check passes, return to Terminal A and press:
+
+```text
+Ctrl+C
+```
+
+## Step 8: Record The Local-To-EKS Differences
+
+Do not change files in this step. Read the differences below so guide 08 makes sense.
+
+| Local guide 07 | Cloud guide 08 |
+|---|---|
+| Uses `skin-lesion-backend:local` | Uses an ECR image URI |
+| Uses `imagePullPolicy: Never` | Pulls from ECR |
+| Uses Docker Desktop context `docker-desktop` | Uses an EKS kubeconfig context |
+| Uses `kubectl port-forward` | Later uses cloud networking and ingress |
+| Creates no AWS resources | Creates or uses ECR and EKS resources |
+
+Expected result:
+
+```text
+You understand which values must change before deploying to EKS.
+```
+
+Why: local Kubernetes and EKS use the same Kubernetes object model, but the image source and cluster context change.
+
+## Final Check
+
+Run from the repo root:
+
+```powershell
+kubectl config current-context
+kubectl apply --dry-run=client -f infra/k8s/dev
+kubectl rollout status -n skin-lesion-dev deployment/skin-lesion-backend
+curl http://127.0.0.1:8080/health
+```
+
+Important: the `curl` command only works while `kubectl port-forward` from Step 7 is still running in another terminal.
+
+Expected result:
+
+```text
+Current context is docker-desktop.
+The dry run accepts all files in infra/k8s/dev.
+The rollout completes successfully.
+The health endpoint returns {"status":"ok"} through the port-forward tunnel.
+```
+
+## Stop Point
+
+Do not create EKS, Ingress, ALB, WAF, autoscaling, or cloud Kubernetes manifests until this local check passes.
+
+Next guide:
+
+```text
+docs/staging/08_ECR_AND_EKS_HANDHOLDING.md
+```
+
+## Cleanup
+
+If you want to remove the local Kubernetes resources after testing, run from the repo root:
+
+```powershell
+kubectl delete -f infra/k8s/dev
+```
+
+Expected result:
+
+```text
+namespace "skin-lesion-dev" deleted
+deployment.apps "skin-lesion-backend" deleted
+service "skin-lesion-backend" deleted
+```
+
+**What this does:** removes the local namespace, Deployment, and Service from Docker Desktop Kubernetes. It does not delete the YAML files from the repo.
+
+Why: cleanup frees local Kubernetes resources while preserving the manifests for the next session.
+
+## Record What Was Verified
+
+After this guide succeeds, record the result in your notes or commit message:
+
+```text
+Guide 07 verified local Kubernetes:
+- docker-desktop context
+- local backend image
+- namespace/deployment/service manifests
+- explicit imagePullPolicy: Never
+- rollout status
+- pod logs
+- service health through port-forward
+```
+
+## Cost Pause / Resume
+
+This guide is **local-only**. It uses Docker Desktop's built-in Kubernetes cluster on your machine.
+
+No AWS resources are created. No cloud shutdown is needed.
+
+If you are done for the day:
+
+1. Stop the port-forward terminal with `Ctrl+C`.
+2. Optionally remove local Kubernetes resources:
+
+```powershell
+kubectl delete -f infra/k8s/dev
+```
+
+3. Optionally disable Kubernetes in Docker Desktop to save local memory.
+
+Before starting guide 08, re-enable Docker Desktop Kubernetes if needed and rerun:
+
+```powershell
+kubectl config current-context
+kubectl get nodes
+kubectl apply -f infra/k8s/dev
+kubectl rollout status -n skin-lesion-dev deployment/skin-lesion-backend
+```
+
+Expected result:
+
+```text
+docker-desktop is the active context, the node is Ready, the manifests apply, and the backend deployment rolls out.
+```
