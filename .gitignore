@@ -22,6 +22,7 @@ npm-debug.log*
 # Terraform
 *.tfstate
 *.tfstate.*
+*.tfplan
 .terraform/
 infra/terraform/.terraform-local/
 .terraform.lock.hcl

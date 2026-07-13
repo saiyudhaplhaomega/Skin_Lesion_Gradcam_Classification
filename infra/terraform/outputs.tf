@@ -103,3 +103,28 @@ output "dsql_connect_policy_arn" {
   description = "IAM policy ARN for DSQL access. Attach to EKS pod roles."
   value       = try(module.aurora_dsql[0].connect_policy_arn, null)
 }
+
+output "dsql_workload_role_arn" {
+  description = "IRSA role ARN for the skin-lesion-backend ServiceAccount. Null until enable_aurora_dsql is true."
+  value       = try(aws_iam_role.dsql_workload[0].arn, null)
+}
+
+output "cognito_user_pool_id" {
+  description = "Cognito user pool ID. Null until enable_cognito is true."
+  value       = try(module.cognito[0].user_pool_id, null)
+}
+
+output "cognito_user_pool_client_id" {
+  description = "Public Cognito user pool client ID. Null until enable_cognito is true."
+  value       = try(module.cognito[0].user_pool_client_id, null)
+}
+
+output "cognito_region" {
+  description = "AWS region hosting the Cognito user pool."
+  value       = var.enable_cognito ? var.aws_region : null
+}
+
+output "github_actions_deploy_role_arn" {
+  description = "Environment-scoped GitHub Actions OIDC deployment role ARN."
+  value       = aws_iam_role.github_actions_deploy.arn
+}

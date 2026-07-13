@@ -6,7 +6,7 @@
 # Prerequisites in the AWS account:
 #   - Provider version >= 5.78.0 (aws_dsql_cluster resource)
 #   - DSQL is available in us-east-1 and us-east-2 only (as of 2026-06)
-#   - The EKS node role needs dsql:DbConnectAdmin on this cluster
+#   - The backend IRSA workload role needs dsql:DbConnectAdmin on this cluster
 #
 # Connection from the backend:
 #   1. Generate an IAM auth token: aws dsql generate-db-connect-admin-auth-token
@@ -17,6 +17,13 @@
 
 resource "aws_dsql_cluster" "main" {
   deletion_protection_enabled = var.deletion_protection
+
+  # Deliberate destroy speed bump: intentionally tear down DSQL only after
+  # first removing this lifecycle block, then applying that change.
+  # The parent module creates this resource only when DSQL is enabled.
+  lifecycle {
+    prevent_destroy = true
+  }
 
   tags = {
     Name        = "${var.project_name}-${var.environment}-dsql"
@@ -39,7 +46,7 @@ resource "aws_ssm_parameter" "dsql_endpoint" {
   }
 }
 
-# IAM policy allowing the EKS node role to connect to DSQL as admin
+# IAM policy allowing the dedicated backend IRSA role to connect to DSQL.
 data "aws_iam_policy_document" "dsql_connect" {
   statement {
     sid    = "AllowDSQLAdminConnect"

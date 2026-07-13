@@ -4,7 +4,11 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 5.0"
+      version = ">= 5.78.0, < 6.0"
+    }
+    tls = {
+      source  = "hashicorp/tls"
+      version = ">= 4.0, < 5.0"
     }
   }
 }
@@ -191,7 +195,8 @@ resource "aws_vpc_endpoint" "s3" {
 }
 # --- Guide 05: KMS Key ---
 resource "aws_kms_key" "main" {
-  description = "KMS key for skin lesion ${var.environment}"
+  description         = "KMS key for skin lesion ${var.environment}"
+  enable_key_rotation = true
 
   tags = {
     Project     = var.project_name
@@ -416,4 +421,5 @@ module "eks" {
   environment            = var.environment
   project                = var.project_name
   endpoint_public_access = var.eks_endpoint_public_access
+  public_access_cidrs    = var.eks_public_access_cidrs
 }

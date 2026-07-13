@@ -2,13 +2,13 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: skin-lesion-backend
-  namespace: skin-lesion-dev
+  namespace: skin-lesion-prod
   labels:
     app: skin-lesion-backend
-    environment: dev
+    environment: prod
     platform: eks
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: skin-lesion-backend
@@ -16,13 +16,13 @@ spec:
     metadata:
       labels:
         app: skin-lesion-backend
-        environment: dev
+        environment: prod
         platform: eks
     spec:
       serviceAccountName: skin-lesion-backend
       containers:
         - name: skin-lesion-backend
-          image: 526404916929.dkr.ecr.us-east-1.amazonaws.com/skin-lesion-backend-dev:local
+          image: 526404916929.dkr.ecr.us-east-1.amazonaws.com/skin-lesion-backend-prod:local
           imagePullPolicy: Always
           ports:
             - containerPort: 8080

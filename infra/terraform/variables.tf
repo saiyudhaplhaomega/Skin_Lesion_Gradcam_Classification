@@ -84,9 +84,33 @@ variable "enable_mlflow_server" {
 }
 
 variable "eks_endpoint_public_access" {
-  description = "Allow public internet access to the EKS API server. Set false in production (requires VPN/bastion to run kubectl). Leave true for staging convenience."
+  description = "Allow public internet access to the EKS API server. Keep true for GitHub-hosted runners unless a self-hosted runner, VPN, or bastion is available."
   type        = bool
   default     = true
+}
+
+variable "eks_public_access_cidrs" {
+  description = "CIDRs allowed to reach the public EKS API endpoint. Tighten to home/office or self-hosted-runner NAT CIDRs once the deployment approach is finalized."
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
+
+variable "enable_cognito" {
+  description = "Create the Cognito user pool, public client, and application groups."
+  type        = bool
+  default     = true
+}
+
+variable "enable_cost_budget" {
+  description = "Create monthly AWS cost budget notifications using alert_email."
+  type        = bool
+  default     = true
+}
+
+variable "monthly_budget_limit_usd" {
+  description = "Monthly AWS cost budget limit in USD."
+  type        = number
+  default     = 100
 }
 
 variable "mlflow_ami_id" {

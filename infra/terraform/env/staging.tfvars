@@ -17,8 +17,8 @@ enable_mlflow_server          = false
 
 # D7 - Aurora DSQL (Guide 22). Set enable_aurora_dsql = true after reading
 # docs/staging/11_AURORA_DSQL_STAGING_HANDHOLDING.md.
-enable_aurora_dsql      = false
-dsql_deletion_protection = false
+enable_aurora_dsql       = false
+dsql_deletion_protection = true
 
 # Add guide-specific variables here only when the matching handholding guide
 # introduces them. Do not paste secrets into this file.

@@ -2,10 +2,10 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: skin-lesion-backend
-  namespace: skin-lesion-dev
+  namespace: skin-lesion-prod
   labels:
     app: skin-lesion-backend
-    environment: dev
+    environment: prod
     platform: eks
   annotations:
     alb.ingress.kubernetes.io/scheme: internet-facing

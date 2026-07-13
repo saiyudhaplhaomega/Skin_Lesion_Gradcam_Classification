@@ -23,6 +23,15 @@ spec:
           imagePullPolicy: Never
           ports:
             - containerPort: 8080
+          # Model initialization can take about two minutes. Liveness and
+          # readiness do not run until this probe succeeds.
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 0
+            periodSeconds: 10
+            failureThreshold: 18
           readinessProbe:
             httpGet:
               path: /health

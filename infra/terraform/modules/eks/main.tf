@@ -24,6 +24,12 @@ variable "endpoint_public_access" {
   default     = true
 }
 
+variable "public_access_cidrs" {
+  description = "CIDRs allowed to reach the EKS public API endpoint"
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
+
 variable "project" {
   description = "Project tag value"
   type        = string
@@ -123,6 +129,7 @@ resource "aws_eks_cluster" "main" {
     subnet_ids              = var.subnet_ids
     endpoint_private_access = true
     endpoint_public_access  = var.endpoint_public_access
+    public_access_cidrs     = var.public_access_cidrs
   }
 
   compute_config {
@@ -156,6 +163,18 @@ resource "aws_eks_cluster" "main" {
   tags = local.common_tags
 }
 
+data "tls_certificate" "eks_oidc" {
+  url = aws_eks_cluster.main.identity[0].oidc[0].issuer
+}
+
+resource "aws_iam_openid_connect_provider" "eks" {
+  url             = aws_eks_cluster.main.identity[0].oidc[0].issuer
+  client_id_list  = ["sts.amazonaws.com"]
+  thumbprint_list = [data.tls_certificate.eks_oidc.certificates[0].sha1_fingerprint]
+
+  tags = local.common_tags
+}
+
 output "cluster_name" {
   description = "Name of the EKS cluster"
   value       = aws_eks_cluster.main.name
@@ -169,4 +188,14 @@ output "cluster_endpoint" {
 output "kubeconfig_certificate_authority_data" {
   description = "Certificate authority data for kubeconfig generation"
   value       = aws_eks_cluster.main.certificate_authority[0].data
+}
+
+output "oidc_provider_arn" {
+  description = "IAM OIDC provider ARN for Kubernetes service-account roles"
+  value       = aws_iam_openid_connect_provider.eks.arn
+}
+
+output "oidc_issuer_url" {
+  description = "EKS OIDC issuer URL for Kubernetes service-account roles"
+  value       = aws_eks_cluster.main.identity[0].oidc[0].issuer
 }

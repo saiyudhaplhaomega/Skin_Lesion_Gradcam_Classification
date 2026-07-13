@@ -19,12 +19,22 @@ spec:
         environment: staging
         platform: eks
     spec:
+      serviceAccountName: skin-lesion-backend
       containers:
         - name: skin-lesion-backend
           image: 526404916929.dkr.ecr.us-east-1.amazonaws.com/skin-lesion-backend-staging:local
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
+          # Allow up to 180 seconds for the ML model to load before liveness
+          # and readiness probes begin evaluating the container.
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 0
+            periodSeconds: 10
+            failureThreshold: 18
           readinessProbe:
             httpGet:
               path: /health

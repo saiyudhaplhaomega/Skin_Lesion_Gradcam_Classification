@@ -19,6 +19,6 @@ output "ssm_endpoint_parameter" {
 }
 
 output "connect_policy_arn" {
-  description = "IAM policy ARN to attach to EKS node/pod roles for DSQL access"
+  description = "IAM policy ARN to attach to the backend IRSA workload role for DSQL access"
   value       = aws_iam_policy.dsql_connect.arn
 }

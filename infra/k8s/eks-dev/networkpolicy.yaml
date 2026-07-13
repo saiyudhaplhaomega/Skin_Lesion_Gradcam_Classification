@@ -1,0 +1,26 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: skin-lesion-backend-ingress
+  namespace: skin-lesion-dev
+spec:
+  podSelector:
+    matchLabels:
+      app: skin-lesion-backend
+  policyTypes:
+    - Ingress
+  ingress:
+    # Permit service-to-service traffic inside this namespace.
+    - from:
+        - podSelector: {}
+    # Permit AWS Load Balancer Controller health and ingress traffic only.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: aws-load-balancer-controller
+      ports:
+        - protocol: TCP
+          port: 8080

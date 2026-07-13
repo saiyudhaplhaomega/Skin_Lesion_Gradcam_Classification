@@ -1,129 +1,13 @@
-name: Staging Deploy
-
-# Deploys the backend to EKS staging after every push to main.
-# Requires these GitHub Actions secrets:
-#   AWS_ACCESS_KEY_ID         - IAM user key with ECR push + EKS describe access
-#   AWS_SECRET_ACCESS_KEY     - matching secret
-#   KUBE_CONFIG_DATA          - base64-encoded staging kubeconfig
-#                               generate with: kubectl config view --raw | base64 -w0
-#
-# To create the IAM user key:
-#   1. In IAM, create user "github-actions-deploy" (no console access)
-#   2. Attach policy: AmazonEC2ContainerRegistryPowerUser + EKS DescribeCluster
-#   3. Create access key and store in the secrets above
-#
-# Runs only when the backend subdirectory changes (or when this file changes).
+# Disabled: backend deployment automation lives in
+# Skin_Lesion_Classification_backend/.github/workflows/ because the backend
+# source is never included when this parent repository is checked out.
+name: Disabled Staging Deploy Pointer
 
 on:
-  push:
-    branches: ["main"]
-    paths:
-      - "Skin_Lesion_Classification_backend/**"
-      - ".github/workflows/staging-deploy.yml"
   workflow_dispatch:
-    inputs:
-      reason:
-        description: "Why are you triggering a manual deploy?"
-        required: false
-
-env:
-  AWS_REGION: us-east-1
-  ECR_REGISTRY: 526404916929.dkr.ecr.us-east-1.amazonaws.com
-  ECR_REPOSITORY: skin-lesion-backend-staging
-  EKS_CLUSTER: skin-lesion-eks
-  K8S_NAMESPACE: skin-lesion-staging
-  K8S_DEPLOYMENT: skin-lesion-backend
 
 jobs:
-  deploy:
-    name: Build, push, roll out
+  disabled:
     runs-on: ubuntu-latest
-    # Only deploy when the backend CI passes. Reference the backend repo's CI
-    # workflow name here so a failing test suite blocks the deploy.
-    # (If backend is a separate repo this needs a workflow_run trigger instead.)
-
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Log in to ECR
-        id: ecr-login
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Set image tag
-        id: tag
-        # Use short SHA so each deploy is traceable to a specific commit.
-        run: echo "IMAGE_TAG=${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
-
-      - name: Build Docker image
-        working-directory: Skin_Lesion_Classification_backend
-        run: |
-          docker build \
-            --tag ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.tag.outputs.IMAGE_TAG }} \
-            --tag ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest \
-            --label "git.sha=${{ github.sha }}" \
-            --label "git.ref=${{ github.ref }}" \
-            --label "build.run=${{ github.run_id }}" \
-            .
-
-      - name: Push image to ECR
-        run: |
-          docker push ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.tag.outputs.IMAGE_TAG }}
-          docker push ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest
-
-      - name: Set up kubectl
-        uses: azure/setup-kubectl@v4
-        with:
-          version: "v1.31.0"
-
-      - name: Load kubeconfig
-        run: |
-          mkdir -p ~/.kube
-          echo "${{ secrets.KUBE_CONFIG_DATA }}" | base64 --decode > ~/.kube/config
-          chmod 600 ~/.kube/config
-
-      - name: Roll out new image
-        run: |
-          kubectl set image deployment/${{ env.K8S_DEPLOYMENT }} \
-            ${{ env.K8S_DEPLOYMENT }}=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.tag.outputs.IMAGE_TAG }} \
-            -n ${{ env.K8S_NAMESPACE }}
-
-      - name: Wait for rollout
-        run: |
-          kubectl rollout status deployment/${{ env.K8S_DEPLOYMENT }} \
-            -n ${{ env.K8S_NAMESPACE }} \
-            --timeout=300s
-
-      - name: Smoke test - health endpoint
-        run: |
-          # Get the ALB hostname from the ingress and hit /health.
-          ALB=$(kubectl get ingress -n ${{ env.K8S_NAMESPACE }} \
-            -o jsonpath='{.items[0].status.loadBalancer.ingress[0].hostname}')
-          echo "ALB: $ALB"
-          for i in {1..5}; do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://$ALB/health")
-            if [ "$STATUS" = "200" ]; then
-              echo "Health check passed (attempt $i)"
-              exit 0
-            fi
-            echo "Attempt $i: HTTP $STATUS - retrying in 15s"
-            sleep 15
-          done
-          echo "Health check failed after 5 attempts"
-          exit 1
-
-      - name: Annotate deployment (on failure)
-        if: failure()
-        run: |
-          kubectl annotate deployment/${{ env.K8S_DEPLOYMENT }} \
-            -n ${{ env.K8S_NAMESPACE }} \
-            "deploy.failed-sha=${{ github.sha }}" \
-            "deploy.failed-run=${{ github.run_id }}" \
-            --overwrite
+      - run: echo "Run the backend repository's Staging Deploy workflow instead."
