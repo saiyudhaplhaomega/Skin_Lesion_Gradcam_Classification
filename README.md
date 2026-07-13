@@ -133,6 +133,7 @@ The frontend should only use browser-safe `NEXT_PUBLIC_*` values. Backend secret
 |---|---|
 | `Skin_Lesion_Classification_backend/` | Backend repo. Build local FastAPI here first. |
 | `Skin_Lesion_Classification_frontend/` | Frontend repo. Build after backend health/mock analysis works. |
+| `Skin_Lesion_Classification_mobile/` | Patient mobile app repo (Expo/React Native), same backend API. See `docs/product/16_MOBILE_APP_HANDHOLDING.md`. |
 | `Skin_Lesion_XAI_research/` | Research notebooks and model experiments. |
 | `infra/terraform/` | Terraform learning area. Root `main.tf` starts absent. |
 | `docs/` | Beginner guides, build guides, and architecture notes. |
