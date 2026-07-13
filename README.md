@@ -180,3 +180,7 @@ make docs-check
 ```
 
 Use `make check` before commits once the backend and frontend features in the current guide exist.
+
+## License
+
+All rights reserved. See [LICENSE](LICENSE). No part of this repository may be copied, modified, or redistributed without prior written permission.
