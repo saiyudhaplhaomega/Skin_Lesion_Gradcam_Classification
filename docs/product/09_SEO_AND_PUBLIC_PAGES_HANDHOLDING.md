@@ -331,11 +331,11 @@ Expected result: Next.js accepts the root metadata.
 
 Why: the base layout gives all public pages safe default metadata and Open Graph/Twitter defaults.
 
-If PowerShell says `npm` is not recognized in this local Codex environment, use the bundled Node runtime directly from the frontend repo:
+If PowerShell says `npm` is not recognized, call the local `node.exe` directly instead:
 
 ```powershell
-C:\Users\saiyu\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe node_modules\typescript\bin\tsc --noEmit
-C:\Users\saiyu\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe node_modules\next\dist\bin\next build
+node node_modules\typescript\bin\tsc --noEmit
+node node_modules\next\dist\bin\next build
 ```
 
 What this fallback does:
