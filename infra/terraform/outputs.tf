@@ -8,6 +8,11 @@ output "kms_alias_name" {
   value       = aws_kms_alias.main.name
 }
 
+output "backend_workload_role_arn" {
+  description = "IRSA role ARN for the skin-lesion-backend ServiceAccount."
+  value       = aws_iam_role.backend_workload.arn
+}
+
 output "upload_bucket_name" {
   description = "Name of the S3 upload bucket"
   value       = aws_s3_bucket.uploads.id
@@ -110,8 +115,8 @@ output "dsql_connect_policy_arn" {
 }
 
 output "dsql_workload_role_arn" {
-  description = "IRSA role ARN for the skin-lesion-backend ServiceAccount. Null until enable_aurora_dsql is true."
-  value       = try(aws_iam_role.dsql_workload[0].arn, null)
+  description = "Deprecated compatibility alias for backend_workload_role_arn."
+  value       = aws_iam_role.backend_workload.arn
 }
 
 output "cognito_user_pool_id" {
