@@ -21,6 +21,7 @@ module "aurora_dsql" {
 
   project_name        = var.project_name
   environment         = var.environment
+  aws_region          = var.aws_region
   deletion_protection = var.dsql_deletion_protection
 }
 

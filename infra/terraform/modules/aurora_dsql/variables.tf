@@ -8,6 +8,11 @@ variable "environment" {
   type        = string
 }
 
+variable "aws_region" {
+  description = "AWS region the cluster is created in, used to construct the connection endpoint"
+  type        = string
+}
+
 variable "deletion_protection" {
   description = "Enable deletion protection on the cluster. Set to true in production."
   type        = bool

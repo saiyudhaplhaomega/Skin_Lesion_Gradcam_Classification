@@ -1,6 +1,6 @@
 output "cluster_id" {
   description = "Aurora DSQL cluster identifier"
-  value       = aws_dsql_cluster.main.id
+  value       = aws_dsql_cluster.main.identifier
 }
 
 output "cluster_arn" {
@@ -10,7 +10,7 @@ output "cluster_arn" {
 
 output "endpoint" {
   description = "Aurora DSQL cluster endpoint (hostname:5432)"
-  value       = aws_dsql_cluster.main.endpoint
+  value       = local.dsql_endpoint
 }
 
 output "ssm_endpoint_parameter" {

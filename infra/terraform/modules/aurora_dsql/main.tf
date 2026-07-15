@@ -33,11 +33,18 @@ resource "aws_dsql_cluster" "main" {
   }
 }
 
+# aws_dsql_cluster exposes no `endpoint` attribute - the connection hostname
+# is derived from the cluster identifier and region.
+# See: https://docs.aws.amazon.com/aurora-dsql/latest/userguide/CLI_connect.html
+locals {
+  dsql_endpoint = "${aws_dsql_cluster.main.identifier}.dsql.${var.aws_region}.on.aws"
+}
+
 # Store the cluster endpoint in SSM so the backend can read it at startup
 resource "aws_ssm_parameter" "dsql_endpoint" {
   name        = "/${var.project_name}/${var.environment}/dsql/endpoint"
   type        = "String"
-  value       = aws_dsql_cluster.main.endpoint
+  value       = local.dsql_endpoint
   description = "Aurora DSQL cluster endpoint for ${var.environment}"
 
   tags = {

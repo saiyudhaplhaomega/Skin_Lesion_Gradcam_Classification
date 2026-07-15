@@ -5,6 +5,10 @@ Run the local session commands at the top, then find your current position in th
 
 ---
 
+## Latest Verified State (2026-07-15)
+
+AWS SSO was refreshed this session (`aws sso login --profile skin-lesion-learning-dev`). With real provider state available, `terraform init -backend=false && terraform validate` ran for real for the first time and found 3 real errors in `infra/terraform/modules/aurora_dsql`: the module referenced `aws_dsql_cluster.main.endpoint` and `.id`, neither of which that resource exports (provider 5.100.0 only exposes `.identifier` and `.arn`; there is no endpoint attribute at all - the connection hostname has to be constructed as `{identifier}.dsql.{region}.on.aws`). Fixed by adding an `aws_region` input to the module and deriving the endpoint via a local instead of a nonexistent attribute. `terraform validate` now passes clean. Also confirmed no EKS cluster exists yet in eu-central-1 or us-east-1 under this account - consistent with the infra still being at learning-scaffold stage, not deployed.
+
 ## Latest Verified State (2026-07-14)
 
 Everything in this section was independently verified this session (tests actually run, builds actually completed, changes actually checked in a real browser or against a real database/container where relevant) - not assumed from reading code. It supersedes the "Current Project State" table below, which is stale (dated 2026-05-13, predates the mobile app, all CI, and the security/eval campaign entirely). That table is left as historical record, not corrected line-by-line, since a full rewrite risks introducing new inaccuracies in sections not directly re-verified this session (in particular, anything about the research repo - out of scope this session by explicit instruction).
@@ -20,7 +24,7 @@ Everything in this section was independently verified this session (tests actual
 
 **Genuinely blocked on things only the user can do** (not attempted further, to avoid guessing at credentials or making a unilateral call on a decision that isn't mine to make):
 
-- AWS SSO session has expired - blocks `terraform validate` against real provider state and any real EKS staging cluster interaction. Refresh via the SSO login flow, then re-run `terraform init -backend=false && terraform validate` from `infra/terraform/`.
+- ~~AWS SSO session expired~~ - RESOLVED 2026-07-15. Refreshed via `aws sso login --profile skin-lesion-learning-dev`; `terraform validate` now runs clean against real provider state (see above). No EKS cluster is provisioned yet, so there is nothing live to check further until infra work actually deploys one.
 - No `MINIMAX_API_KEY` configured - blocks `run_live_generation_eval` (the live, manual-only generation-quality evaluator in `app/eval/generation_eval_runner.py`) and any live-embedding run of `scripts/run_rag_eval.py` against `admin_market_research`'s real retriever (only tested this session with a non-semantic hash-stub embedding and 3 seeded documents - retrieval *works*, but ranking *quality* under real embeddings and real data volume is still unverified).
 - Two decisions that are the user's to make, not mine: whether to provision a dedicated S3 bucket for lab results (the current setup reuses the lesion-image bucket, which forecloses S3 Object Lock/WORM later since that can only be enabled at bucket creation), and what clinical region taxonomy to use for Grad-CAM explanations (`explanation_facts_service.py` still hardcodes `"central lesion area"` for every prediction - a real accuracy gap in patient-facing AI explanation text, not something to guess at without review).
 
