@@ -296,6 +296,76 @@ resource "aws_s3_bucket_lifecycle_configuration" "uploads" {
     }
   }
 }
+
+# --- Lab Results Bucket ---
+# Object Lock must be enabled when the bucket is created and cannot be enabled later.
+resource "aws_s3_bucket" "lab_results" {
+  bucket              = "skin-lesion-lab-results-${var.environment}-${var.s3_unique_suffix}"
+  object_lock_enabled = true
+
+  tags = {
+    Project     = var.project_name
+    Environment = var.environment
+    Purpose     = "lab-results"
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "lab_results" {
+  bucket = aws_s3_bucket.lab_results.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_versioning" "lab_results" {
+  bucket = aws_s3_bucket.lab_results.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "lab_results" {
+  bucket = aws_s3_bucket.lab_results.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      kms_master_key_id = aws_kms_key.main.arn
+      sse_algorithm     = "aws:kms"
+    }
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "lab_results" {
+  bucket = aws_s3_bucket.lab_results.id
+
+  rule {
+    id     = "abort-incomplete-multipart-uploads"
+    status = "Enabled"
+
+    filter {}
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
+  }
+}
+
+resource "aws_s3_bucket_object_lock_configuration" "lab_results" {
+  bucket = aws_s3_bucket.lab_results.id
+
+  rule {
+    default_retention {
+      mode = "GOVERNANCE"
+      days = 365
+    }
+  }
+
+  depends_on = [aws_s3_bucket_versioning.lab_results]
+}
+
 # --- Guide 05: Training Bucket ---
 
 resource "aws_s3_bucket" "training" {

@@ -13,6 +13,11 @@ output "upload_bucket_name" {
   value       = aws_s3_bucket.uploads.id
 }
 
+output "lab_results_bucket_name" {
+  description = "Name of the S3 bucket for retained lab result files"
+  value       = aws_s3_bucket.lab_results.id
+}
+
 output "training_bucket_name" {
   description = "Name of the S3 training bucket"
   value       = aws_s3_bucket.training.id
