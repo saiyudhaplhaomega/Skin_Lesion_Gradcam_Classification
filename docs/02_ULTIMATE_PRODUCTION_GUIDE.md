@@ -328,7 +328,7 @@ The auto-memory tracks 28 engineering gaps. Each one is closed in a specific gui
 | 3 | No SQS queues for training pipeline | `staging/13_EVENTS_SQS_WORKER_HANDHOLDING.md` | 3 |
 | 4 | Image to Redis 1h TTL race vs doctor validation | `product/04_PRIVACY_CONSENT_STORAGE_HANDHOLDING.md` (persist to S3 immediately) | 2 |
 | 5 | No idempotency on consent endpoint | `product/04_PRIVACY_CONSENT_STORAGE_HANDHOLDING.md` | 2 |
-| 6 | MLflow server not provisioned | `product/17_TRAINING_PIPELINE_MODEL_REGISTRY_HANDHOLDING.md` | 2 |
+| 6 | ~~MLflow server not provisioned~~ - found already implemented, verified 2026-07-17: `infra/terraform/mlflow.tf` (EC2 + IAM + security group), deliberately gated behind `var.enable_mlflow_server` (default `false`, pending cost review) - a real cost gate, not missing code. Distinct from the local-dev MLflow tracking server (`05_BUILD_STATUS.md` guide 21, already running locally). | `product/17_TRAINING_PIPELINE_MODEL_REGISTRY_HANDHOLDING.md` | 2 |
 | 7 | No circuit breaker on ML inference | `local-dev/06_MODEL_AND_GRADCAM_HANDHOLDING.md` + `production/12` | 1, 5 |
 | 8 | Model confidence not calibrated | `product/12_RESEARCH_FAIRNESS_MONITORING_HANDHOLDING.md` | 2 |
 | 9 | No class distribution gate before retraining | `product/17_TRAINING_PIPELINE_MODEL_REGISTRY_HANDHOLDING.md` | 2 |
