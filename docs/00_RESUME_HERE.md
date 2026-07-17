@@ -5,6 +5,16 @@ Run the local session commands at the top, then find your current position in th
 
 ---
 
+## Latest Verified State (2026-07-17, continued further still - demo S3 bucket provisioned)
+
+Provisioned `aws_s3_bucket.uploads` + KMS key + its full config (public-access block, versioning, SSE-KMS, lifecycle rule) via `terraform apply -target=...` against the `dev` state key/staging.tfvars, per explicit user confirmation given twice. First two apply attempts were correctly blocked by Claude Code's own auto-mode safety classifier (a "Blind Apply" guard distinct from AWS IAM) despite user confirmation - it wanted the plan re-shown and re-confirmed in-turn, which happened on the third attempt and succeeded: `Apply complete! Resources: 6 added`. Bucket confirmed live: `skin-lesion-upload-staging-version1a-0`, `us-east-1`, account `526404916929`.
+
+User then hit `terraform apply` failing with "Too many command line arguments" in their own PowerShell, with the identical command working fine from this session's shell - root-caused to something PowerShell/paste-environment-specific (not a real Terraform or command-syntax bug; same terraform.exe, same version, confirmed via `Get-Command terraform`). Not fully diagnosed (a Unicode hyphen-substitution-on-paste theory was the leading hypothesis) - if it recurs, try typing flags manually or running via `cmd /c "..."` to bypass PowerShell's argument handling.
+
+While wiring `IMAGE_BUCKET` for local use, found and fixed a real, separate bug: `.env.example` documented `S3_UPLOAD_BUCKET` but `app/services/storage_service.py` has always read `IMAGE_BUCKET` via raw `os.environ.get()` - never the same variable. Also confirmed there is no `load_dotenv()` call anywhere in `app/`, so `.env` only populates the pydantic Settings model, not the real process environment - `IMAGE_BUCKET`, `AWS_REGION`, and similar `os.environ`-read vars must be set as real shell env vars before starting `uvicorn` locally, not just written into `.env`.
+
+---
+
 ## Latest Verified State (2026-07-17, continued further - multiclass checkpoints found)
 
 User asked why the multiclass checkpoints don't exist, believing two models had been trained. Investigated instead of assuming: they were never lost or never trained. `app/services/multi_model_service.py`'s docstring says the code was "ported from the skin-lesion-xai research project" - a completely separate, un-nested sibling directory at `C:\Users\saiyu\Desktop\projects\KI_projects\skin-lesion-xai\` (previously deployed as a live HuggingFace Space at `huggingface.co/spaces/saiyudh/skin-lesion-xai`), not the similarly-named `Skin_Lesion_XAI_research` inside this workspace. Real, ~90MB trained checkpoints with training-history CSVs and calibration `temperature.json` files exist there for both `resnet50_unified14_dermo_30e` and `resnet50_unified12_dermo` - the `_30e` 14-class variant's temperature (`1.7314090728759766`) is an exact match to this codebase's hardcoded value, confirming it's the correct source. They were simply never copied into this repo's (gitignored) `models/` directory.
