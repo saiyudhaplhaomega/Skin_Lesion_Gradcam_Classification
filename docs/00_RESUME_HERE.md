@@ -89,7 +89,7 @@ Do not run cloud status commands until `docs/staging/00_CLOUD_COST_CONTROL_HANDH
 | SQS queues | NOT provisioned | Critical gap |
 | MLflow server | NOT provisioned | Critical gap |
 | ECS subnet placement | Wrong (public) | Critical gap - tasks must be in private subnet |
-| Model training | DISCREPANCY | EPOCHS ambiguity: train_backbones.py=2, run_training.py=10, docs say >=15. No authoritative value. num_workers=0, no AMP — see 15_AMP_TRAINING_OPTIMIZATION.md |
+| Model training | RESOLVED (interim) | EPOCHS aligned to 15 in both train_backbones.py and run_training.py (2026-07-17) - matches the epoch cap recorded in resnet50_best.pth's saved metadata (`epochs=15, val_auc=0.889, test_auc=0.913, test_acc=0.860`, a real completed run), the checkpoint config's `fallback_model_path` (verified: `BUILD_BACKEND.md:293`). Caveat confirmed via codex review: the saved `epochs` field records the configured cap, not necessarily epochs actually completed before early stopping - no log confirms which. A fresh, logged training run is still needed to make 15 fully defensible. `run_training.py` still has `num_workers=0` and no AMP (unlike train_backbones.py, which already has both) — see 15_AMP_TRAINING_OPTIMIZATION.md |
 | CI/CD | Not started | After local tests pass |
 
 ---
@@ -265,11 +265,11 @@ These are the highest-priority engineering gaps. Each has a guide:
 
 | Gap | Guide |
 |---|---|
-| EPOCHS ambiguity (2 vs 10 vs >=15) | Research repo + resolve before any ML gap work |
-| ElastiCache Redis not provisioned | `docs/staging/20_ELASTICACHE_REDIS_HANDHOLDING.md` |
-| ECS tasks in public subnet | `docs/staging/08_ECR_AND_EKS_HANDHOLDING.md` (subnet section) |
-| No SQS queues | `docs/staging/13_EVENTS_SQS_WORKER_HANDHOLDING.md` |
-| No MLflow server | `docs/staging/21_MLFLOW_SERVER_HANDHOLDING.md` |
+| ~~EPOCHS ambiguity (2 vs 10 vs >=15)~~ - RESOLVED (interim) 2026-07-17, still needs a real convergence sweep | Research repo + resolve before any ML gap work |
+| ElastiCache Redis not provisioned | `docs/staging/20_ELASTICACHE_REDIS_HANDHOLDING.md` - `infra/terraform/modules/elasticache/` exists but is an empty directory (no `.tf` files); genuinely not provisioned |
+| ~~ECS tasks in public subnet~~ - found already RESOLVED (stale doc), verified 2026-07-17: `infra/terraform/main.tf`'s `module "eks"` already places nodes in `aws_subnet.private_app_a/b` (main.tf:487-489), matching `docs/staging/08_ECR_AND_EKS_HANDHOLDING.md`'s own guide. Public subnets exist but nothing compute-related is placed in them. VPC endpoints (ECR, S3) give private-subnet nodes AWS API access without a NAT gateway. | `docs/staging/08_ECR_AND_EKS_HANDHOLDING.md` (subnet section) |
+| ~~No SQS queues~~ - found already RESOLVED (stale doc), verified 2026-07-17: `infra/terraform/events.tf` defines `aws_sqs_queue.training_workflow` (FIFO) + `training_workflow_dlq` with a redrive policy, EventBridge wiring, and IAM policy; backend has real (non-stub) consumer/publisher/worker code at `app/workers/sqs_consumer.py`, `sqs_publisher.py`, `training_bucket_worker.py`. Not verified against live AWS (SSO expired) - code/terraform presence only. | `docs/staging/13_EVENTS_SQS_WORKER_HANDHOLDING.md` |
+| No MLflow server | `docs/staging/21_MLFLOW_SERVER_HANDHOLDING.md` - `infra/terraform/modules/mlflow/` exists but is an empty directory (no `.tf` files); genuinely not provisioned |
 | Consent endpoint not idempotent | `docs/product/04_PRIVACY_CONSENT_STORAGE_HANDHOLDING.md` |
 | Model undertrained (2 epochs) | `docs/local-dev/15_AMP_TRAINING_OPTIMIZATION.md` (EPOCHS must be resolved first) |
 
@@ -290,7 +290,7 @@ Quick reference categories:
 
 | Gap | Description | Notes |
 |-----|-------------|-------|
-| 19 | Model undertrained — EPOCHS ambiguity: train_backbones.py=2, run_training.py=10, docs say >=15. No single authoritative value. EPOCHS must be resolved before any training pipeline gap can be trusted. | See M1, M2, M3 below |
+| 19 | ~~Model undertrained — EPOCHS ambiguity~~ RESOLVED (interim) 2026-07-17: both train_backbones.py and run_training.py now default to EPOCHS=15, matching resnet50_best.pth's saved checkpoint metadata (the model actually used as fallback_model_path in production, verified directly: `epochs=15, test_auc=0.913, test_acc=0.860`) and docs/06_RESEARCH_BRIDGE.md's original "minimum 15 epochs" recommendation. The three other docs that still cited "2 epochs" (05_BUILD_STATUS.md, 06_RESEARCH_BRIDGE.md, 02_ULTIMATE_PRODUCTION_GUIDE.md) were updated to match, so this is no longer a code-vs-code-vs-docs inconsistency. Still open: no epochs-vs-AUC sweep or early-stopping log exists to confirm the checkpoint's training actually ran the full 15 epochs rather than stopping early - a real convergence-analysis run is needed to make 15 more than an interim value. | See M1, M2, M3 below |
 
 ### Missing Gaps (Not in Original 28)
 

@@ -165,7 +165,7 @@ The staging Terraform and Kubernetes configuration has been extended, but nothin
 | RQ5 notebooks (uncertainty quantification) | PLANNED | MC dropout, deep ensembles |
 | num_workers=0 fix (gap #17) | PLANNED | Must set >= 4 |
 | No AMP fix (gap #18) | PLANNED | Must enable mixed precision |
-| Undertrained model fix (gap #19) | PLANNED | DISCREPANCY — train_backbones.py=2, run_training.py=10, conflicting values |
+| Undertrained model fix (gap #19) | RESOLVED (interim) 2026-07-17 | Both scripts now default to EPOCHS=15; no convergence sweep yet - see docs/06_RESEARCH_BRIDGE.md |
 | Model promotion to backend | PLANNED | See 06_RESEARCH_BRIDGE.md |
 
 ---

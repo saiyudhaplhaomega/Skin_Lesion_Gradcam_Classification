@@ -147,14 +147,12 @@ These gaps are tracked in the research notebooks, not in the build guides.
 - **Verification:** Training speedup visible, no OOM on batch_size=32 with ResNet50
 - **When fixed:** After resolving
 
-### Gap #19: Model Undertrained (2 Epochs)
+### Gap #19: Model Undertrained (2 Epochs) - RESOLVED (interim) 2026-07-17
 
-- **What:** Models have only been trained for 2 epochs
-- **Impact:** Accuracy is far below potential; models are essentially random at 2 epochs on HAM10000
-- **Where:** All model checkpoints in `ml/outputs/models/`
-- **Fix:** Train for minimum 15 epochs with early stopping on validation loss
-- **Verification:** Validation accuracy > 80% (vs ~50% at 2 epochs, ~70% at 10 epochs)
-- **When fixed:** After resolving
+- **What:** `train_backbones.py` and `run_training.py` previously defaulted to 2 and 10 epochs respectively, conflicting with each other and with this doc's own "minimum 15 epochs" recommendation below. Both now default to 15, matching this doc's original target and the epoch cap recorded in the production checkpoint (`Skin_Lesion_Classification_backend/ml/outputs/models/resnet50_best.pth`, `epochs=15`, `test_auc=0.913`, `test_acc=0.860` - a real completed run, not a stub).
+- **Remaining gap:** No early-stopping log or epochs-vs-AUC sweep exists, so it's unconfirmed whether that checkpoint's training actually ran the full 15 epochs or stopped earlier (the saved `epochs` field records the configured cap, not necessarily epochs completed). A fresh, logged training run is needed to make 15 fully defensible rather than "the cap that happened to be configured."
+- **Where:** `Skin_Lesion_XAI_research/train_backbones.py`, `run_training.py`
+- **Verification:** Validation accuracy > 80% (production checkpoint's `test_acc=0.860` already clears this bar)
 
 ---
 

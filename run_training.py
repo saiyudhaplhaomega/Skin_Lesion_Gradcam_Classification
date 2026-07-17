@@ -145,13 +145,16 @@ print(f"Device: {DEVICE} - {device_name}")
 
 # Cell 8: Training loop
 print("\n" + "=" * 50)
-print("CELL 8: Training Loop (10 epochs)")
+print("CELL 8: Training Loop (15 epochs)")
 print("=" * 50)
 from tqdm import tqdm
 import copy
 from sklearn.metrics import roc_auc_score
 
-EPOCHS = 10
+# 15 matches resnet50_best.pth's saved metadata (the checkpoint actually
+# used as fallback_model_path in production) - see docs/00_RESUME_HERE.md
+# Gap 19. Not validated by a convergence sweep.
+EPOCHS = 15
 best_val_auc = 0
 best_model_state = None
 

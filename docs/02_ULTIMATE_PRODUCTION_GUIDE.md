@@ -341,7 +341,7 @@ The auto-memory tracks 28 engineering gaps. Each one is closed in a specific gui
 | 16 | No model drift detection | `product/12` | 2 |
 | 17 | num_workers=0 in DataLoaders | research repo notebooks | research |
 | 18 | No AMP (mixed precision) | research repo notebooks | research |
-| 19 | Model undertrained (2 epochs) | research repo notebooks | research |
+| 19 | ~~Model undertrained (2 epochs)~~ RESOLVED (interim) 2026-07-17, EPOCHS=15 default, no convergence sweep yet | research repo notebooks | research |
 | 20 | No ONNX export | `product/17` | 2 |
 | 21 | XGBoost-on-frozen-features incompatible with Grad-CAM | already decided not to do (memory) | n/a |
 | 22 | No retry policy on external calls | `product/06_SAFE_LLM_EXPLANATION_HANDHOLDING.md` + `staging/13` | 2, 3 |
