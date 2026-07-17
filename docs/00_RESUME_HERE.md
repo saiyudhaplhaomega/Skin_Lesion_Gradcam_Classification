@@ -5,6 +5,19 @@ Run the local session commands at the top, then find your current position in th
 
 ---
 
+## Latest Verified State (2026-07-17, continued)
+
+Same-day continuation. Closed out the 3 items left open after the binary-analysis Prediction fix, all independently verified (tests actually run via the real venv, not trusted from codex's self-report - codex's own sandbox cannot execute the venv at all, "Access is denied", so every pytest/ruff/mypy run cited below was run directly, not pasted from codex's output):
+
+- **Multiclass Prediction persistence**: `/api/v1/analysis/multiclass` now persists a `MulticlassPrediction` row (new model + migration `n9o0p1q2r374`, since multiclass results don't fit the binary `Prediction` schema). Mirrors the binary endpoint's EXIF-stripped upload and compensating-delete pattern. Codex review: no blocking issues. Also fixed the same pre-existing test-fixture regression pattern in `test_upload_hardening.py`'s multiclass magic-byte test.
+- **Doctor-role dead code**: `analyze_image` and `analyze_image_multiclass` both restricted to `require_any_role("patient")` - the ownership check only ever matched patients, so the doctor grant was unreachable dead code (fails closed, not a vulnerability, but misleading). Doctor-initiated analysis on a patient's behalf remains undesigned; flagged, not built.
+- **`POST /api/v1/consent`**: built for real, wired to the already-correct `consent_service.py` state machine. **Codex review caught a critical bug before this was committed**: `get_or_create_consent` looks up by `idempotency_key` alone, which is only globally unique, not scoped per patient - a patient reusing or guessing another patient's idempotency key would have received that patient's full consent record. Fixed: cross-owner idempotency-key hits are now rejected with 409 without disclosing the existing record. Also fixed: an unhandled `IntegrityError` on concurrent racing creates (now caught, rolled back, re-read), and `ConsentResponse` was dropping `patient_id` from the response (unnecessary exposure) plus adding a direct ownership check on the by-prediction lookup. New regression test added specifically for the idempotency-key disclosure bug. The `consents` table already existed (in `e320ef403580_create_training_cases.py`, just under a misleading migration filename) - no new migration needed.
+- **AWS SSO**: still not resolved for `skin-lesion-learning-dev` (account `526404916929` via the `skin-lesion-learning` sso-session). A login was completed but resolved a different profile/account (`default` -> account `137696817339`; `saiyudh_worker` -> account `539659138849`). Attempted a device-code flow to relay a URL+code, but the OAuth callback needs a live local listener that can't survive a headless/backgrounded process - genuinely needs the user to run `aws sso login --profile skin-lesion-learning-dev` themselves in an interactive terminal. ECR cleanup for `skin-lesion-backend-staging` remains blocked on this.
+
+517+ backend tests pass, ruff/mypy clean, after every round of fixes above - re-verified after each codex round, not just once at the end.
+
+---
+
 ## Latest Verified State (2026-07-16)
 
 Continuation of the 2026-07-15 session. All work below independently verified (tests actually run, codex code review obtained separately from implementation, terraform validate/alembic checks actually run) - not self-reported by whichever tool implemented it.
