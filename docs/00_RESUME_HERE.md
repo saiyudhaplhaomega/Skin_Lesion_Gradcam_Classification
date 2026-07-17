@@ -5,6 +5,14 @@ Run the local session commands at the top, then find your current position in th
 
 ---
 
+## Latest Verified State (2026-07-17, continued further - multiclass checkpoints found)
+
+User asked why the multiclass checkpoints don't exist, believing two models had been trained. Investigated instead of assuming: they were never lost or never trained. `app/services/multi_model_service.py`'s docstring says the code was "ported from the skin-lesion-xai research project" - a completely separate, un-nested sibling directory at `C:\Users\saiyu\Desktop\projects\KI_projects\skin-lesion-xai\` (previously deployed as a live HuggingFace Space at `huggingface.co/spaces/saiyudh/skin-lesion-xai`), not the similarly-named `Skin_Lesion_XAI_research` inside this workspace. Real, ~90MB trained checkpoints with training-history CSVs and calibration `temperature.json` files exist there for both `resnet50_unified14_dermo_30e` and `resnet50_unified12_dermo` - the `_30e` 14-class variant's temperature (`1.7314090728759766`) is an exact match to this codebase's hardcoded value, confirming it's the correct source. They were simply never copied into this repo's (gitignored) `models/` directory.
+
+Copied both into place, then found and fixed two real bugs in the loader that only surfaced once real checkpoints existed to load: (1) the `model_state_dict` unwrap key didn't match the actual wrapper key, `model_state`; (2) the checkpoint's raw torchvision ResNet50 key names needed a `model.` prefix to match this module's `self.model = backbone` wrapping, which the loader never added. Verified end-to-end: both variants report `is_stub=False`, `model_status="trained_checkpoint"` on a real prediction call. 518 tests still pass, ruff/mypy clean. Corrected the now-stale "checkpoints not yet present" claims in `CLAUDE.md` and `README.md`. Since the Dockerfile already does `COPY models ./models`, this also fixes containerized/staging serving, not just local dev - but the checkpoint files themselves must still be manually copied in on any fresh checkout or image build (gitignored, not committed anywhere).
+
+---
+
 ## Latest Verified State (2026-07-17, continued)
 
 Same-day continuation. Closed out the 3 items left open after the binary-analysis Prediction fix, all independently verified (tests actually run via the real venv, not trusted from codex's self-report - codex's own sandbox cannot execute the venv at all, "Access is denied", so every pytest/ruff/mypy run cited below was run directly, not pasted from codex's output):
