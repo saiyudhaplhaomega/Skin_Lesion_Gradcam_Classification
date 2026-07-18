@@ -9,98 +9,173 @@ Run the local session commands at the top, then find your current position in th
 
 **2026-07-18 session proved the full stack works live end to end on real EKS** (see the detailed entry below), then tore everything down to $0. Nothing is deployed right now. This section is the checklist to get back to a clean, working deploy in one pass instead of the iterative discovery this session went through.
 
-**Step 1 - AWS permission set.** Before touching Terraform, add these to the `SkinLesionVpcLearning` permission set in AWS IAM Identity Center (same place the `ecr:BatchDeleteImage`, EKS OIDC, and `skin-lesion-*` IAM role fixes went this session). All four are new gaps found tonight that were deliberately deferred, not yet added:
+**Step 1 - AWS permission set.** On 2026-07-19, the user posted the *entire* current `SkinLesionVpcLearning` policy and asked for an exhaustive audit against every terraform resource in the repo, not just the four features touched on 2026-07-18. Both codex and MiniMax independently audited it (full terraform file contents given to each separately), findings were cross-checked against each other and against AWS's own IAM resource-level-permission model where they disagreed (they disagreed on ElastiCache's ARN scoping - codex's resource-scoped ARNs are correct per AWS's ElastiCache service-authorization reference; MiniMax's blanket `Resource: "*"` recommendation was overly broad). This is the complete, reconciled list - not a subset. **Important framing: none of this means code is missing.** Redis, MLflow, GuardDuty, VPC Flow Logs, and Aurora DSQL are all fully built in terraform already, just gated behind `enable_*` flags (all `false` in `staging.tfvars` for cost reasons) - the "critical gaps" table further down this doc is stale (dated 2026-05-13) and was already superseded by the 2026-07-17 entries confirming this. CI/CD is also not "not started" - real workflow files exist at `.github/workflows/backend-ci.yml`, `staging-deploy.yml`, `production-deploy.yml` in both this repo and the backend repo; only the terraform-side GitHub OIDC provider was never applied.
+
+**New Sid blocks needed** (add all of these as new statements):
 
 ```json
 {
-    "Sid": "AllowCognitoUserPoolCreateLearning",
+    "Sid": "AllowElastiCacheRedisLearning",
     "Effect": "Allow",
-    "Action": "cognito-idp:CreateUserPool",
+    "Action": [
+        "elasticache:CreateCacheSubnetGroup", "elasticache:DeleteCacheSubnetGroup",
+        "elasticache:DescribeCacheSubnetGroups", "elasticache:ModifyCacheSubnetGroup",
+        "elasticache:CreateCacheParameterGroup", "elasticache:DeleteCacheParameterGroup",
+        "elasticache:DescribeCacheParameterGroups", "elasticache:DescribeCacheParameters",
+        "elasticache:ModifyCacheParameterGroup", "elasticache:ResetCacheParameterGroup",
+        "elasticache:CreateReplicationGroup", "elasticache:DeleteReplicationGroup",
+        "elasticache:DescribeReplicationGroups", "elasticache:ModifyReplicationGroup",
+        "elasticache:AddTagsToResource", "elasticache:RemoveTagsFromResource",
+        "elasticache:ListTagsForResource"
+    ],
+    "Resource": [
+        "arn:aws:elasticache:us-east-1:526404916929:subnetgroup:skin-lesion-redis-*",
+        "arn:aws:elasticache:us-east-1:526404916929:parametergroup:skin-lesion-redis-*",
+        "arn:aws:elasticache:us-east-1:526404916929:replicationgroup:skin-lesion-redis-*"
+    ]
+},
+{
+    "Sid": "AllowElastiCacheServiceLinkedRoleCreation",
+    "Effect": "Allow",
+    "Action": "iam:CreateServiceLinkedRole",
+    "Resource": "*",
+    "Condition": { "StringLike": { "iam:AWSServiceName": ["elasticache.amazonaws.com"] } }
+},
+{
+    "Sid": "AllowMlflowEc2InstanceLearning",
+    "Effect": "Allow",
+    "Action": [
+        "ec2:RunInstances", "ec2:TerminateInstances", "ec2:StopInstances", "ec2:StartInstances",
+        "ec2:ModifyInstanceAttribute", "ec2:DescribeInstances", "ec2:DescribeInstanceStatus",
+        "ec2:DescribeInstanceAttribute", "ec2:DescribeVolumes", "ec2:AssociateIamInstanceProfile",
+        "ec2:DisassociateIamInstanceProfile", "ec2:ReplaceIamInstanceProfileAssociation",
+        "ec2:DescribeIamInstanceProfileAssociations"
+    ],
     "Resource": "*"
 },
 {
-    "Sid": "AllowCognitoUserPoolManageLearning",
+    "Sid": "AllowMlflowEc2InstanceProfileLearning",
     "Effect": "Allow",
     "Action": [
-        "cognito-idp:DeleteUserPool",
-        "cognito-idp:DescribeUserPool",
-        "cognito-idp:UpdateUserPool",
-        "cognito-idp:CreateUserPoolClient",
-        "cognito-idp:DeleteUserPoolClient",
-        "cognito-idp:DescribeUserPoolClient",
-        "cognito-idp:UpdateUserPoolClient",
-        "cognito-idp:CreateGroup",
-        "cognito-idp:DeleteGroup",
-        "cognito-idp:GetGroup",
-        "cognito-idp:UpdateGroup",
-        "cognito-idp:ListTagsForResource",
-        "cognito-idp:TagResource",
-        "cognito-idp:UntagResource"
+        "iam:CreateInstanceProfile", "iam:DeleteInstanceProfile", "iam:GetInstanceProfile",
+        "iam:ListInstanceProfiles", "iam:AddRoleToInstanceProfile", "iam:RemoveRoleFromInstanceProfile",
+        "iam:TagInstanceProfile", "iam:UntagInstanceProfile"
+    ],
+    "Resource": "arn:aws:iam::526404916929:instance-profile/skin-lesion-*"
+},
+{
+    "Sid": "AllowCognitoLearning",
+    "Effect": "Allow",
+    "Action": [
+        "cognito-idp:CreateUserPool", "cognito-idp:DeleteUserPool", "cognito-idp:DescribeUserPool",
+        "cognito-idp:UpdateUserPool", "cognito-idp:ListUserPools", "cognito-idp:CreateUserPoolClient",
+        "cognito-idp:DeleteUserPoolClient", "cognito-idp:DescribeUserPoolClient",
+        "cognito-idp:UpdateUserPoolClient", "cognito-idp:CreateGroup", "cognito-idp:DeleteGroup",
+        "cognito-idp:GetGroup", "cognito-idp:UpdateGroup", "cognito-idp:ListGroups",
+        "cognito-idp:TagResource", "cognito-idp:UntagResource", "cognito-idp:ListTagsForResource"
     ],
     "Resource": "arn:aws:cognito-idp:us-east-1:526404916929:userpool/*"
 },
 {
     "Sid": "AllowCostBudgetLearning",
     "Effect": "Allow",
-    "Action": [
-        "budgets:ViewBudget",
-        "budgets:ModifyBudget"
-    ],
+    "Action": ["budgets:ViewBudget", "budgets:ModifyBudget"],
     "Resource": "arn:aws:budgets::526404916929:budget/skin-lesion-*"
 },
 {
     "Sid": "AllowGithubOidcProviderLearning",
     "Effect": "Allow",
     "Action": [
-        "iam:CreateOpenIDConnectProvider",
-        "iam:GetOpenIDConnectProvider",
-        "iam:TagOpenIDConnectProvider",
-        "iam:DeleteOpenIDConnectProvider",
-        "iam:ListOpenIDConnectProviders"
+        "iam:CreateOpenIDConnectProvider", "iam:GetOpenIDConnectProvider",
+        "iam:TagOpenIDConnectProvider", "iam:UntagOpenIDConnectProvider",
+        "iam:DeleteOpenIDConnectProvider", "iam:ListOpenIDConnectProviders",
+        "iam:UpdateOpenIDConnectProviderThumbprint"
     ],
     "Resource": "arn:aws:iam::526404916929:oidc-provider/token.actions.githubusercontent.com"
 },
 {
-    "Sid": "AllowEksAccessEntryLearning",
+    "Sid": "AllowVpcFlowLogsCloudWatchLearning",
     "Effect": "Allow",
     "Action": [
-        "eks:CreateAccessEntry",
-        "eks:DeleteAccessEntry",
-        "eks:DescribeAccessEntry",
-        "eks:UpdateAccessEntry",
-        "eks:AssociateAccessPolicy",
-        "eks:DisassociateAccessPolicy",
-        "eks:ListAssociatedAccessPolicies",
-        "eks:ListAccessEntries"
+        "logs:CreateLogGroup", "logs:DeleteLogGroup", "logs:DescribeLogGroups",
+        "logs:PutRetentionPolicy", "logs:DeleteRetentionPolicy", "logs:AssociateKmsKey",
+        "logs:DisassociateKmsKey", "logs:TagResource", "logs:UntagResource", "logs:ListTagsForResource"
     ],
-    "Resource": "arn:aws:eks:us-east-1:526404916929:cluster/skin-lesion-*"
+    "Resource": [
+        "arn:aws:logs:us-east-1:526404916929:log-group:/aws/vpc/skin-lesion-*",
+        "arn:aws:logs:us-east-1:526404916929:log-group:/aws/vpc/skin-lesion-*:*"
+    ]
 },
 {
-    "Sid": "AllowLabResultsBucketLearning",
+    "Sid": "AllowGuardDutyLearning",
     "Effect": "Allow",
     "Action": [
-        "s3:CreateBucket",
-        "s3:DeleteBucket",
-        "s3:GetBucketVersioning",
-        "s3:PutBucketVersioning",
-        "s3:GetEncryptionConfiguration",
-        "s3:PutEncryptionConfiguration",
-        "s3:GetBucketPublicAccessBlock",
-        "s3:PutBucketPublicAccessBlock",
-        "s3:GetLifecycleConfiguration",
-        "s3:PutLifecycleConfiguration",
-        "s3:GetBucketObjectLockConfiguration",
-        "s3:PutBucketObjectLockConfiguration",
-        "s3:GetBucketTagging",
-        "s3:PutBucketTagging",
-        "s3:GetBucketLocation",
-        "s3:ListBucket"
+        "guardduty:CreateDetector", "guardduty:ListDetectors", "guardduty:GetDetector",
+        "guardduty:UpdateDetector", "guardduty:DeleteDetector", "guardduty:TagResource",
+        "guardduty:UntagResource", "guardduty:ListTagsForResource"
     ],
-    "Resource": "arn:aws:s3:::skin-lesion-lab-results-*"
+    "Resource": "*"
+},
+{
+    "Sid": "AllowEventBridgeGuardDutyLearning",
+    "Effect": "Allow",
+    "Action": [
+        "events:PutRule", "events:DeleteRule", "events:DescribeRule", "events:PutTargets",
+        "events:RemoveTargets", "events:ListTargetsByRule", "events:TagResource",
+        "events:UntagResource", "events:ListTagsForResource"
+    ],
+    "Resource": "arn:aws:events:us-east-1:526404916929:rule/skin-lesion-*-guardduty-*"
+},
+{
+    "Sid": "AllowAuroraDsqlLearning",
+    "Effect": "Allow",
+    "Action": [
+        "dsql:CreateCluster", "dsql:GetCluster", "dsql:UpdateCluster", "dsql:DeleteCluster",
+        "dsql:ListClusters", "dsql:TagResource", "dsql:UntagResource", "dsql:ListTagsForResource"
+    ],
+    "Resource": "*"
+},
+{
+    "Sid": "AllowDsqlServiceLinkedRoleCreation",
+    "Effect": "Allow",
+    "Action": "iam:CreateServiceLinkedRole",
+    "Resource": "*",
+    "Condition": { "StringLike": { "iam:AWSServiceName": ["dsql.amazonaws.com"] } }
+},
+{
+    "Sid": "AllowAuroraDsqlParameterLearning",
+    "Effect": "Allow",
+    "Action": [
+        "ssm:PutParameter", "ssm:GetParameter", "ssm:GetParameters", "ssm:DeleteParameter",
+        "ssm:DescribeParameters", "ssm:AddTagsToResource", "ssm:RemoveTagsFromResource",
+        "ssm:ListTagsForResource"
+    ],
+    "Resource": "arn:aws:ssm:us-east-1:526404916929:parameter/skin-lesion/*/dsql/*"
+},
+{
+    "Sid": "AllowDsqlIamPolicyLearning",
+    "Effect": "Allow",
+    "Action": [
+        "iam:CreatePolicy", "iam:DeletePolicy", "iam:GetPolicy", "iam:GetPolicyVersion",
+        "iam:ListPolicyVersions", "iam:CreatePolicyVersion", "iam:SetDefaultPolicyVersion",
+        "iam:DeletePolicyVersion", "iam:TagPolicy", "iam:UntagPolicy"
+    ],
+    "Resource": "arn:aws:iam::526404916929:policy/skin-lesion-*-dsql-connect"
 }
 ```
 
-Already-fixed and already in the permission set from tonight (no action needed): `iam:CreateOpenIDConnectProvider`/etc for the EKS cluster's own OIDC provider, the widened `AllowEksIamRolesLearning` statement covering `arn:aws:iam::526404916929:role/skin-lesion-*` (includes `PutRolePolicy`/`GetRolePolicy`/`DeleteRolePolicy`/`ListInstanceProfilesForRole`), and `ecr:BatchDeleteImage`.
+**Extend these existing Sids** (add the listed items to their current `Action`/`Resource` arrays, don't create new Sids):
+
+- `AllowS3AppBucketsLearning` - add resources `arn:aws:s3:::skin-lesion-mlflow-dev-*`, `skin-lesion-mlflow-staging-*`, `skin-lesion-lab-results-dev-*`, `skin-lesion-lab-results-staging-*` (plus their `/*` object variants). All the actions this needs are already granted by this Sid - it's purely an ARN-pattern gap, both for MLflow's artifact bucket and the still-deferred lab-results bucket from 2026-07-18.
+- `AllowSnsNotificationsLearning` - add actions `sns:GetSubscriptionAttributes`, `sns:ListSubscriptionsByTopic`; add resource `arn:aws:sns:us-east-1:526404916929:skin-lesion-*-notifications:*` (subscription ARNs are a distinct suffix from the topic ARN already listed).
+- `AllowTrainingWorkflowIamPolicyLearning` - add actions `iam:CreatePolicyVersion`, `iam:SetDefaultPolicyVersion`, `iam:DeletePolicyVersion` (needed to update the policy document on a second `terraform apply`, not just create it once).
+- `AllowVpcLearningPlanCreateAndCleanup` - add actions `ec2:CreateFlowLogs`, `ec2:DeleteFlowLogs`, `ec2:ReplaceRoute`, `ec2:ReplaceRouteTableAssociation`.
+- `AllowKmsLearning` - add actions `kms:UpdateKeyDescription`, `kms:DisableKeyRotation`, `kms:UpdateAlias` (minor, only needed if a key gets modified in place rather than recreated).
+- `AllowTerraformStateBucketBootstrap` - add action `s3:GetBucketLocation` (minor, provider-level read).
+
+**Already covered, confirmed by both audits - do not add anything for these:** MLflow's and VPC-flow-logs' IAM roles/inline-policies (`skin-lesion-*` wildcard already matches), `ec2:DescribeImages` for AMI lookups (covered by `ec2:Describe*`), Redis/MLflow security groups (covered by the broad SG Sid), the GitHub Actions deploy role itself (matches `skin-lesion-*`, only its OIDC provider was missing).
+
+**Cost reality check before flipping any `enable_*` flag to `true`:** Redis (ElastiCache `cache.t3.micro`-class) and MLflow (a persistent EC2 instance) are the two that cost real, ongoing money even when idle - budget roughly $12-15/mo and $7-10/mo respectively on top of the ~$135-150/mo EKS baseline. GuardDuty is pay-per-analysis (a few dollars/mo on an account this size). Cognito, Budgets, VPC Flow Logs, and the GitHub OIDC provider are free or effectively free. Aurora DSQL is pay-per-request with a free tier but its IAM-token-refresh-inside-a-running-pod story is still undesigned (see Step 5 below) - don't enable it without solving that first.
 
 **Step 2 - `aws sso login --profile skin-lesion-learning-dev`**, then `export AWS_PROFILE=skin-lesion-learning-dev` in the shell before any terraform/kubectl command (terraform has no explicit `profile` in its `provider "aws"` block - it silently falls back to whatever the default AWS session is if this isn't exported, which caused a false-alarm 403 early in the 2026-07-18 session).
 
