@@ -22,10 +22,13 @@ spec:
       serviceAccountName: skin-lesion-backend
       containers:
         - name: skin-lesion-backend
-          image: 526404916929.dkr.ecr.us-east-1.amazonaws.com/skin-lesion-backend-dev:local
+          image: 526404916929.dkr.ecr.us-east-1.amazonaws.com/skin-lesion-backend-staging:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
+          envFrom:
+            - secretRef:
+                name: skin-lesion-backend-env
           # Allow up to 180 seconds for the ML model to load before liveness
           # and readiness probes begin evaluating the container.
           startupProbe:
@@ -47,10 +50,15 @@ spec:
               port: 8080
             initialDelaySeconds: 15
             periodSeconds: 20
+          # request == limit for memory: EKS Auto Mode sizes the node off the
+          # request, and a limit above what the chosen node can actually
+          # provide causes a node-level OOM once usage grows toward the
+          # limit, not a clean per-pod cgroup kill (hit this directly: a
+          # 3Gi/5Gi split on a ~3.1Gi-allocatable node OOM-killed the pod).
           resources:
             requests:
-              cpu: 250m
-              memory: 1Gi
-            limits:
               cpu: 1000m
-              memory: 2Gi
+              memory: 4Gi
+            limits:
+              cpu: 2000m
+              memory: 4Gi

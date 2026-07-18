@@ -1,0 +1,13 @@
+# EKS Auto Mode ships its own managed EBS CSI driver under a distinct name,
+# ebs.csi.eks.amazonaws.com (not the standard self-managed ebs.csi.aws.com).
+# The cluster's pre-existing "gp2" class uses the legacy in-tree provisioner
+# (kubernetes.io/aws-ebs), which Auto Mode rejects at scheduling time.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: gp3-auto
+provisioner: ebs.csi.eks.amazonaws.com
+parameters:
+  type: gp3
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Delete

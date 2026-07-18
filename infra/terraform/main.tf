@@ -193,6 +193,28 @@ resource "aws_vpc_endpoint" "s3" {
     Environment = var.environment
   }
 }
+
+# Without this, pods in the private subnets have no path to STS at all (no
+# NAT Gateway by design) and IRSA's AssumeRoleWithWebIdentity call hangs
+# until it times out - discovered live, the backend's S3 upload call blocked
+# for 5+ minutes trying to reach sts.us-east-1.amazonaws.com before failing.
+resource "aws_vpc_endpoint" "sts" {
+  vpc_id              = aws_vpc.main.id
+  service_name        = "com.amazonaws.${var.aws_region}.sts"
+  vpc_endpoint_type   = "Interface"
+  private_dns_enabled = true
+  subnet_ids = [
+    aws_subnet.private_app_a.id,
+    aws_subnet.private_app_b.id,
+  ]
+  security_group_ids = [aws_security_group.vpc_endpoints.id]
+
+  tags = {
+    Name        = "${var.project_name}-sts-${var.environment}"
+    Project     = var.project_name
+    Environment = var.environment
+  }
+}
 # --- Guide 05: KMS Key ---
 resource "aws_kms_key" "main" {
   description         = "KMS key for skin lesion ${var.environment}"

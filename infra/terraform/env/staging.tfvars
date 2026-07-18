@@ -7,7 +7,7 @@ aws_region       = "us-east-1"
 aws_account_id   = "526404916929"
 s3_unique_suffix = "version1a-0"
 
-alert_email                   = "replace-me@example.com"
+alert_email                   = "resourcesaiyudh@gmail.com"
 log_retention_days            = 30
 waf_rate_limit                = 1000
 enable_security_observability = false

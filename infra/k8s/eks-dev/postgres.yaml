@@ -1,0 +1,98 @@
+# In-cluster Postgres for the first live EKS smoke test. This is not the
+# staging-grade database (no managed backups, no HA) - it exists so the
+# backend has somewhere to persist Predictions/Consents while proving the
+# EKS deployment path actually works end to end. Replace with Aurora DSQL
+# (see infra/terraform/database.tf, enable_aurora_dsql) once the IAM
+# token-refresh path is verified.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+  namespace: skin-lesion-dev
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: gp3-auto
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: skin-lesion-dev
+  labels:
+    app: postgres
+    environment: dev
+    platform: eks
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+        environment: dev
+        platform: eks
+    spec:
+      containers:
+        - name: postgres
+          # No NAT Gateway exists in this VPC (private subnets only have ECR/S3
+          # VPC endpoints, by design - see infra/terraform/main.tf), so nodes
+          # cannot reach Docker Hub. Mirrored into the existing backend ECR
+          # repo under a distinct tag instead of provisioning a NAT Gateway.
+          image: 526404916929.dkr.ecr.us-east-1.amazonaws.com/skin-lesion-backend-staging:postgres-16-alpine
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - secretRef:
+                name: postgres-credentials
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "skin_lesion"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "skin_lesion"]
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+              subPath: pgdata
+      volumes:
+        - name: postgres-data
+          persistentVolumeClaim:
+            claimName: postgres-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: skin-lesion-dev
+  labels:
+    app: postgres
+    environment: dev
+    platform: eks
+spec:
+  type: ClusterIP
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+      protocol: TCP
+      name: postgres

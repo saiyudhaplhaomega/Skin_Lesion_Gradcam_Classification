@@ -41,13 +41,16 @@ resource "aws_iam_role" "backend_workload" {
 }
 
 data "aws_iam_policy_document" "backend_workload_storage" {
+  # lab_results is temporarily excluded: s3:CreateBucket for that specific
+  # bucket name is still denied by the SkinLesionVpcLearning permission set
+  # (a separate, deferred fix). Add aws_s3_bucket.lab_results.arn back here
+  # once that gap is closed and the bucket exists.
   statement {
     sid = "ListBackendBuckets"
 
     actions = ["s3:ListBucket"]
     resources = [
       aws_s3_bucket.uploads.arn,
-      aws_s3_bucket.lab_results.arn,
     ]
   }
 
@@ -61,7 +64,6 @@ data "aws_iam_policy_document" "backend_workload_storage" {
     ]
     resources = [
       "${aws_s3_bucket.uploads.arn}/*",
-      "${aws_s3_bucket.lab_results.arn}/*",
     ]
   }
 

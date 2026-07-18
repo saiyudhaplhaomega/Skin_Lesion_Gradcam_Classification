@@ -5,6 +5,139 @@ Run the local session commands at the top, then find your current position in th
 
 ---
 
+## GOAL: Next Session - Clean Redeploy To EKS
+
+**2026-07-18 session proved the full stack works live end to end on real EKS** (see the detailed entry below), then tore everything down to $0. Nothing is deployed right now. This section is the checklist to get back to a clean, working deploy in one pass instead of the iterative discovery this session went through.
+
+**Step 1 - AWS permission set.** Before touching Terraform, add these to the `SkinLesionVpcLearning` permission set in AWS IAM Identity Center (same place the `ecr:BatchDeleteImage`, EKS OIDC, and `skin-lesion-*` IAM role fixes went this session). All four are new gaps found tonight that were deliberately deferred, not yet added:
+
+```json
+{
+    "Sid": "AllowCognitoUserPoolCreateLearning",
+    "Effect": "Allow",
+    "Action": "cognito-idp:CreateUserPool",
+    "Resource": "*"
+},
+{
+    "Sid": "AllowCognitoUserPoolManageLearning",
+    "Effect": "Allow",
+    "Action": [
+        "cognito-idp:DeleteUserPool",
+        "cognito-idp:DescribeUserPool",
+        "cognito-idp:UpdateUserPool",
+        "cognito-idp:CreateUserPoolClient",
+        "cognito-idp:DeleteUserPoolClient",
+        "cognito-idp:DescribeUserPoolClient",
+        "cognito-idp:UpdateUserPoolClient",
+        "cognito-idp:CreateGroup",
+        "cognito-idp:DeleteGroup",
+        "cognito-idp:GetGroup",
+        "cognito-idp:UpdateGroup",
+        "cognito-idp:ListTagsForResource",
+        "cognito-idp:TagResource",
+        "cognito-idp:UntagResource"
+    ],
+    "Resource": "arn:aws:cognito-idp:us-east-1:526404916929:userpool/*"
+},
+{
+    "Sid": "AllowCostBudgetLearning",
+    "Effect": "Allow",
+    "Action": [
+        "budgets:ViewBudget",
+        "budgets:ModifyBudget"
+    ],
+    "Resource": "arn:aws:budgets::526404916929:budget/skin-lesion-*"
+},
+{
+    "Sid": "AllowGithubOidcProviderLearning",
+    "Effect": "Allow",
+    "Action": [
+        "iam:CreateOpenIDConnectProvider",
+        "iam:GetOpenIDConnectProvider",
+        "iam:TagOpenIDConnectProvider",
+        "iam:DeleteOpenIDConnectProvider",
+        "iam:ListOpenIDConnectProviders"
+    ],
+    "Resource": "arn:aws:iam::526404916929:oidc-provider/token.actions.githubusercontent.com"
+},
+{
+    "Sid": "AllowEksAccessEntryLearning",
+    "Effect": "Allow",
+    "Action": [
+        "eks:CreateAccessEntry",
+        "eks:DeleteAccessEntry",
+        "eks:DescribeAccessEntry",
+        "eks:UpdateAccessEntry",
+        "eks:AssociateAccessPolicy",
+        "eks:DisassociateAccessPolicy",
+        "eks:ListAssociatedAccessPolicies",
+        "eks:ListAccessEntries"
+    ],
+    "Resource": "arn:aws:eks:us-east-1:526404916929:cluster/skin-lesion-*"
+},
+{
+    "Sid": "AllowLabResultsBucketLearning",
+    "Effect": "Allow",
+    "Action": [
+        "s3:CreateBucket",
+        "s3:DeleteBucket",
+        "s3:GetBucketVersioning",
+        "s3:PutBucketVersioning",
+        "s3:GetEncryptionConfiguration",
+        "s3:PutEncryptionConfiguration",
+        "s3:GetBucketPublicAccessBlock",
+        "s3:PutBucketPublicAccessBlock",
+        "s3:GetLifecycleConfiguration",
+        "s3:PutLifecycleConfiguration",
+        "s3:GetBucketObjectLockConfiguration",
+        "s3:PutBucketObjectLockConfiguration",
+        "s3:GetBucketTagging",
+        "s3:PutBucketTagging",
+        "s3:GetBucketLocation",
+        "s3:ListBucket"
+    ],
+    "Resource": "arn:aws:s3:::skin-lesion-lab-results-*"
+}
+```
+
+Already-fixed and already in the permission set from tonight (no action needed): `iam:CreateOpenIDConnectProvider`/etc for the EKS cluster's own OIDC provider, the widened `AllowEksIamRolesLearning` statement covering `arn:aws:iam::526404916929:role/skin-lesion-*` (includes `PutRolePolicy`/`GetRolePolicy`/`DeleteRolePolicy`/`ListInstanceProfilesForRole`), and `ecr:BatchDeleteImage`.
+
+**Step 2 - `aws sso login --profile skin-lesion-learning-dev`**, then `export AWS_PROFILE=skin-lesion-learning-dev` in the shell before any terraform/kubectl command (terraform has no explicit `profile` in its `provider "aws"` block - it silently falls back to whatever the default AWS session is if this isn't exported, which caused a false-alarm 403 early in the 2026-07-18 session).
+
+**Step 3 - `terraform init -backend-config=env/backend-dev.hcl -reconfigure` then `terraform apply -var-file=env/staging.tfvars`** from `infra/terraform`. Should now be a single clean apply (69+ resources) instead of the piecemeal `-target` sequence this session needed to work around missing permissions. Cost: ~$135-150/month while running (EKS control plane ~$73/mo, VPC interface endpoints ~$43/mo across ECR api/dkr/STS, Auto Mode compute for the pods, Cognito/SQS/SNS/budget alarms all free-tier).
+
+**Step 4 - build and push the backend image**, same as before: `docker build`, `aws ecr get-login-password | docker login`, `docker push`. Docker Desktop needs to be running first - `"/c/Program Files/Docker/Docker/Docker Desktop.exe"` launched as a background process (not `start ""` from git-bash, which didn't reliably work this session).
+
+**Step 5 - deploy the k8s manifests from `infra/k8s/eks-dev/`** in this order: `namespace.yaml`, `storageclass.yaml` (uses `ebs.csi.eks.amazonaws.com` - EKS Auto Mode's own driver name, not the standard `ebs.csi.aws.com`), `postgres.yaml` (in-cluster Postgres for now - real Aurora DSQL is still undesigned for IAM-token refresh inside a running pod, flagged as a separate decision, not attempted), `serviceaccount.yaml` (IRSA role ARN already filled in), `networkpolicy.yaml`, `service.yaml`, `pdb.yaml`, `hpa.yaml`, then `deployment.yaml` last. `deployment.yaml`'s resource block is now `requests == limits == 4Gi memory / 1-2 CPU` - do not widen the request/limit gap again, it causes a node-level OOM once Auto Mode picks a node sized to the request rather than the limit.
+
+**Step 6 - create the backend's config Secret manually** (not committed - contains a real DB password): `DATABASE_URL` (postgres service DNS name inside the cluster), `APP_ENV=staging`, `AWS_REGION=us-east-1`, `IMAGE_BUCKET` (from terraform output `upload_bucket_name`). `AUTH_BYPASS_FOR_TESTS=true` / `AUTH_BYPASS_GROUPS=patient` only if Cognito real auth still isn't wired - now that Cognito's permission gap is fixed in Step 1, decide whether to wire real Cognito auth instead, since the bypass was only ever meant to unblock last session's smoke test, not stand in long-term. No `DISABLE_SCORECAM` needed anymore - the ScoreCAM bug is now fixed in code (see below), not env-flagged around.
+
+**Step 7 - run `alembic upgrade head`** from the local venv against a `kubectl port-forward`'d postgres, exactly as done last session.
+
+**Step 8 - smoke test** `/health`, `POST /api/v1/lesions`, `POST /api/v1/analysis`, `POST /api/v1/consent` via `kubectl port-forward`. Expect `/api/v1/analysis` to return in a few seconds now (not 10+ minutes) since ScoreCAM was removed from the default synchronous path on 2026-07-18 - see fix detail below.
+
+**When done testing, tear down**: `terraform plan -destroy -var-file=env/staging.tfvars` then apply, empty the ECR repo (`aws ecr batch-delete-image`) and S3 bucket object versions (`aws s3api list-object-versions` + `delete-objects`) first since Terraform can't delete non-empty ones. Full sequence is documented in the 2026-07-18 entry below.
+
+---
+
+## Latest Verified State (2026-07-18 - full live EKS deploy, tested, and torn down)
+
+First-ever real deploy to EKS on this account. Full sequence: `terraform apply` (foundation: VPC/subnets/VPC-endpoints/ECR/S3/SQS/SNS/EventBridge/CloudWatch), found and deleted 2 orphaned empty IAM roles from the already-documented 2026-06-24 forgotten environment that were blocking EKS cluster creation, targeted `terraform apply` for the EKS cluster itself once those were cleared, built and pushed the backend image to ECR, deployed an in-cluster Postgres (no NAT Gateway exists by design, so Docker Hub is unreachable from private subnets - mirrored `postgres:16-alpine` into the same ECR repo under a distinct tag instead of paying for a NAT Gateway), wired `deployment.yaml`'s previously-empty env vars via a k8s Secret, ran `alembic upgrade head` through a `kubectl port-forward`, and live-tested `/health` -> `/api/v1/lesions` -> `/api/v1/analysis` -> `/api/v1/consent` end to end - real ResNet50 inference (`model_status: trained_checkpoint`), real S3-uploaded raw+CAM images (KMS-encrypted), a real `Prediction` row, and a real `Consent` row, all confirmed via direct DB/S3 queries, not just HTTP 200s.
+
+Real bugs found and fixed live (each blocked the deploy until fixed):
+- EKS Auto Mode's managed EBS CSI driver is `ebs.csi.eks.amazonaws.com`, not the standard `ebs.csi.aws.com` - a `StorageClass` using the wrong provisioner silently fails pod scheduling ("provisioner is not supported").
+- `deployment.yaml` had zero env vars or secret refs despite looking deploy-ready; `serviceaccount.yaml`'s IRSA role ARN was still a literal placeholder string.
+- `resources.requests`/`resources.limits` mismatch (3Gi/5Gi) let a pod get scheduled onto a node too small for its own limit, causing a node-level OOM once real inference ran. Fixed by setting request == limit (4Gi) so EKS Auto Mode sizes the node to what the pod can actually use.
+- **No VPC endpoint for STS.** The VPC has ECR and S3 endpoints but no NAT Gateway (by design) and no STS endpoint - IRSA's `AssumeRoleWithWebIdentity` call had no network path at all and hung 5+ minutes before failing. Added `aws_vpc_endpoint.sts` to `main.tf` (~$14/mo). This is the single most important fix - without it, no pod on this cluster can authenticate to any AWS API via IRSA, not just S3.
+- **ScoreCAM inside `compute_cam_ensemble()` took 10+ minutes per request on CPU** (2048 activation channels / 16-batch = 128 forward-pass batches, ~5s each) - a real, previously-unmeasured production bug, only ever exercised via mocked `GradCAM`/`GradCAM++` classes in unit tests before tonight. An in-session env-var stopgap (`DISABLE_SCORECAM`) turned out to be a correctness bug of its own (faked a 3-method ensemble by duplicating the GradCAM++ map as "scorecam", silently deflating the disagreement score). **Properly fixed same session, post-deploy, via codex**: `compute_cam_ensemble()` now defaults to a genuine 2-method ensemble (GradCAM + GradCAM++); ScoreCAM is only ever run via an explicit `compute_cam_ensemble_with_scorecam()` / `use_scorecam=True` call for future offline/async use, and its failures propagate instead of being fabricated. `CAMEnsembleResult` now carries `method_count` so callers/consumers can tell how many methods actually ran. Also fixed in the same pass: `_run_inference_with_timeout()` in `router.py` previously let a timed-out CPU-bound inference thread keep running in the background after returning a 504 to the client - repeated timeouts could silently exhaust the inference worker pool over time. Now the bulkhead slot is held until the thread truly finishes, and new requests get a fast `503` once all slots are occupied instead of oversubscribing. 523 backend tests pass (independently re-run, not trusted from codex's self-report), ruff/mypy clean. Full detail and an operational guide: `docs/build/05_INFERENCE_TIMEOUT_AND_CAM_OPERATIONS.md`.
+- Several AWS IAM permission-set gaps on `SkinLesionVpcLearning` (same recurring pattern as the historical `ecr:BatchDeleteImage` gap) - `iam:CreateOpenIDConnectProvider` for the EKS cluster's own OIDC provider (this one blocks IRSA entirely, fixed live), `iam:PutRolePolicy`/`GetRolePolicy`/`DeleteRolePolicy`/`ListInstanceProfilesForRole` on IAM roles (widened to a `skin-lesion-*` resource prefix, fixed live). Cognito, Budgets, GitHub Actions OIDC role, and the lab-results S3 bucket were deliberately deferred (not needed for the smoke test) - see the GOAL checklist above for the exact policy JSON to add next time in one pass instead of discovering them one at a time again.
+
+Explicitly out of scope, flagged for a future product/domain decision, not fixed: whether the binary analysis endpoint's `target_class=0` CAM semantics are correct for benign predictions (codex flagged this as worth an audit), and `faithfulness_service.py`'s actual forward-pass cost being roughly double what its own docstring/comment claims.
+
+**Environment fully torn down after testing**, per explicit user decision to include the previously-existing demo `uploads` bucket in the teardown (its only contents were this session's synthetic smoke-test images, not real patient data). Verified clean: `aws eks list-clusters` empty, no running EC2 instances, no `skin-lesion-*` S3 buckets anywhere in the account. Terraform `dev` state is empty. Nothing is costing money right now.
+
+---
+
 ## Latest Verified State (2026-07-17, continued further still - demo S3 bucket provisioned)
 
 Provisioned `aws_s3_bucket.uploads` + KMS key + its full config (public-access block, versioning, SSE-KMS, lifecycle rule) via `terraform apply -target=...` against the `dev` state key/staging.tfvars, per explicit user confirmation given twice. First two apply attempts were correctly blocked by Claude Code's own auto-mode safety classifier (a "Blind Apply" guard distinct from AWS IAM) despite user confirmation - it wanted the plan re-shown and re-confirmed in-turn, which happened on the third attempt and succeeded: `Apply complete! Resources: 6 added`. Bucket confirmed live: `skin-lesion-upload-staging-version1a-0`, `us-east-1`, account `526404916929`.
