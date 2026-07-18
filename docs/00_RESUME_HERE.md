@@ -28,11 +28,7 @@ Run the local session commands at the top, then find your current position in th
         "elasticache:AddTagsToResource", "elasticache:RemoveTagsFromResource",
         "elasticache:ListTagsForResource"
     ],
-    "Resource": [
-        "arn:aws:elasticache:us-east-1:526404916929:subnetgroup:skin-lesion-redis-*",
-        "arn:aws:elasticache:us-east-1:526404916929:parametergroup:skin-lesion-redis-*",
-        "arn:aws:elasticache:us-east-1:526404916929:replicationgroup:skin-lesion-redis-*"
-    ]
+    "Resource": "*"
 },
 {
     "Sid": "AllowElastiCacheServiceLinkedRoleCreation",
@@ -64,11 +60,17 @@ Run the local session commands at the top, then find your current position in th
     "Resource": "arn:aws:iam::526404916929:instance-profile/skin-lesion-*"
 },
 {
+    "Sid": "AllowCognitoUserPoolCreateLearning",
+    "Effect": "Allow",
+    "Action": ["cognito-idp:CreateUserPool", "cognito-idp:ListUserPools"],
+    "Resource": "*"
+},
+{
     "Sid": "AllowCognitoLearning",
     "Effect": "Allow",
     "Action": [
-        "cognito-idp:CreateUserPool", "cognito-idp:DeleteUserPool", "cognito-idp:DescribeUserPool",
-        "cognito-idp:UpdateUserPool", "cognito-idp:ListUserPools", "cognito-idp:CreateUserPoolClient",
+        "cognito-idp:DeleteUserPool", "cognito-idp:DescribeUserPool",
+        "cognito-idp:UpdateUserPool", "cognito-idp:CreateUserPoolClient",
         "cognito-idp:DeleteUserPoolClient", "cognito-idp:DescribeUserPoolClient",
         "cognito-idp:UpdateUserPoolClient", "cognito-idp:CreateGroup", "cognito-idp:DeleteGroup",
         "cognito-idp:GetGroup", "cognito-idp:UpdateGroup", "cognito-idp:ListGroups",
@@ -97,7 +99,7 @@ Run the local session commands at the top, then find your current position in th
     "Sid": "AllowVpcFlowLogsCloudWatchLearning",
     "Effect": "Allow",
     "Action": [
-        "logs:CreateLogGroup", "logs:DeleteLogGroup", "logs:DescribeLogGroups",
+        "logs:CreateLogGroup", "logs:DeleteLogGroup",
         "logs:PutRetentionPolicy", "logs:DeleteRetentionPolicy", "logs:AssociateKmsKey",
         "logs:DisassociateKmsKey", "logs:TagResource", "logs:UntagResource", "logs:ListTagsForResource"
     ],
@@ -105,6 +107,12 @@ Run the local session commands at the top, then find your current position in th
         "arn:aws:logs:us-east-1:526404916929:log-group:/aws/vpc/skin-lesion-*",
         "arn:aws:logs:us-east-1:526404916929:log-group:/aws/vpc/skin-lesion-*:*"
     ]
+},
+{
+    "Sid": "AllowCloudWatchLogsDescribeLearning",
+    "Effect": "Allow",
+    "Action": "logs:DescribeLogGroups",
+    "Resource": "*"
 },
 {
     "Sid": "AllowGuardDutyLearning",
@@ -176,6 +184,16 @@ Run the local session commands at the top, then find your current position in th
 **Already covered, confirmed by both audits - do not add anything for these:** MLflow's and VPC-flow-logs' IAM roles/inline-policies (`skin-lesion-*` wildcard already matches), `ec2:DescribeImages` for AMI lookups (covered by `ec2:Describe*`), Redis/MLflow security groups (covered by the broad SG Sid), the GitHub Actions deploy role itself (matches `skin-lesion-*`, only its OIDC provider was missing).
 
 **Cost reality check before flipping any `enable_*` flag to `true`:** Redis (ElastiCache `cache.t3.micro`-class) and MLflow (a persistent EC2 instance) are the two that cost real, ongoing money even when idle - budget roughly $12-15/mo and $7-10/mo respectively on top of the ~$135-150/mo EKS baseline. GuardDuty is pay-per-analysis (a few dollars/mo on an account this size). Cognito, Budgets, VPC Flow Logs, and the GitHub OIDC provider are free or effectively free. Aurora DSQL is pay-per-request with a free tier but its IAM-token-refresh-inside-a-running-pod story is still undesigned (see Step 5 below) - don't enable it without solving that first.
+
+**User's decision (2026-07-19): enable Cognito, GuardDuty, VPC Flow Logs, Redis, and MLflow on the next deploy** (`enable_cognito=true` is already the default; set `enable_guardduty=true`, `enable_security_observability=true`, `enable_elasticache=true`, `enable_mlflow_server=true` in `staging.tfvars`; `enable_aurora_dsql` stays `false`). The user explicitly asked for confirmation that `terraform destroy` will cleanly tear all of this back down afterward, since tonight's actual teardown needed manual AWS CLI cleanup beyond `terraform destroy` alone (ECR images, S3 object versions, one missing IAM permission). Codex re-audited destroy-completeness specifically for these five and found two real corrections already applied above (ElastiCache needs `Resource: "*"`, not resource-scoped ARNs - AWS's ElastiCache IAM reference requires this; Cognito's `CreateUserPool`/`ListUserPools` need their own `Resource: "*"` statement, split out above) plus one real code bug, fixed the same session: **`mlflow.tf`'s `aws_s3_bucket.mlflow_artifacts` had no `force_destroy`, and is versioned - the exact same "bucket not empty" failure that blocked tonight's teardown on the uploads bucket, except this one had never even been applied once. Fixed by adding `force_destroy = true` (MLflow experiment artifacts, not patient data - safe to wipe on destroy).**
+
+**Destroy checklist for these five specifically, once applied and tested:**
+- Redis: `terraform destroy` alone is sufficient (replication group deletes first, then subnet/parameter group). Expect several minutes - ElastiCache deletion is not instant. No manual pre-emptying needed.
+- MLflow: `terraform destroy` alone is now sufficient after the `force_destroy = true` fix. EC2 instance terminates normally (no termination protection configured); its root volume deletes with it.
+- Cognito: `terraform destroy` alone is sufficient - deleting a user pool cascades to its users, groups, and clients. This is irreversible; if real users exist by then, export them first.
+- GuardDuty: `terraform destroy` alone is sufficient - EventBridge target/rule delete before the detector, no ordering issues.
+- VPC Flow Logs: `terraform destroy` alone is sufficient - flow log deletes before its IAM role/policy and log group.
+- General: still confirm `aws eks list-clusters`, `aws ec2 describe-instances --filters Name=instance-state-name,Values=running,pending`, and `aws s3 ls | grep skin-lesion` are all empty after destroy, same as tonight - don't just trust a clean `terraform destroy` exit code without checking.
 
 **Step 2 - `aws sso login --profile skin-lesion-learning-dev`**, then `export AWS_PROFILE=skin-lesion-learning-dev` in the shell before any terraform/kubectl command (terraform has no explicit `profile` in its `provider "aws"` block - it silently falls back to whatever the default AWS session is if this isn't exported, which caused a false-alarm 403 early in the 2026-07-18 session).
 

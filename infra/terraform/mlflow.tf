@@ -1,8 +1,9 @@
 # --- Guide 21: Optional MLflow Server ---
 
 resource "aws_s3_bucket" "mlflow_artifacts" {
-  count  = var.enable_mlflow_server ? 1 : 0
-  bucket = "${var.project_name}-mlflow-${var.environment}-${var.s3_unique_suffix}"
+  count         = var.enable_mlflow_server ? 1 : 0
+  bucket        = "${var.project_name}-mlflow-${var.environment}-${var.s3_unique_suffix}"
+  force_destroy = true
 
   tags = {
     Project     = var.project_name
